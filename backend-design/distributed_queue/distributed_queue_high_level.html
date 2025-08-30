@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Distributed Queue System Design</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Visualization & Content Choices:
+        - Report Info: Section I (Intro) -> Goal: Inform Basics -> Viz/Presentation: Text blocks, lists -> Interaction: Navigation -> Justification: Foundational knowledge.
+        - Report Info: Section II (Requirements) -> Goal: Detail Specifications -> Viz/Presentation: Text, interactive NFR table, illustrative NFR Radar Chart (Chart.js) -> Interaction: Tab-switching for NFRs, chart hover -> Justification: NFRs are multifaceted; radar chart gives a visual overview of their interplay.
+        - Report Info: Section III (Architecture) -> Goal: Explain Structure -> Viz/Presentation: Text, HTML/CSS diagrams for Broker models, interactive API table -> Interaction: Navigation, table exploration -> Justification: Visual comparison for architectural models, detailed API info in table.
+        - Report Info: Section IV (Data Management) -> Goal: Detail Data Handling -> Viz/Presentation: Text, interactive tables for Partitioning/Replication/Consistency -> Interaction: Table exploration -> Justification: Comparative data benefits from structured table views.
+        - Report Info: Section V (Reliability) -> Goal: Explain Robustness -> Viz/Presentation: Text, interactive tables for Fault Tolerance/DLQs -> Interaction: Table exploration -> Justification: Complex mechanisms are clarified through structured comparison.
+        - Report Info: Section VI (Operations) -> Goal: Explain Management -> Viz/Presentation: Text, interactive Monitoring Metrics table, illustrative Queue Depth Bar Chart (Chart.js) -> Interaction: Table exploration, chart hover -> Justification: Metrics are key; chart visualizes an example.
+        - All tables from the report are converted to styled HTML tables.
+        - CONFIRMATION: NO SVG graphics used. NO Mermaid JS used.
+    -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .content-section {
+            display: none;
+        }
+        .content-section.active {
+            display: block;
+        }
+        .nav-link {
+            cursor: pointer;
+            padding: 0.75rem 1rem;
+            border-radius: 0.375rem;
+            transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+        }
+        .nav-link:hover, .nav-link.active {
+            background-color: #0284c7; /* sky-600 */
+            color: white;
+        }
+        .nav-link.active {
+            font-weight: 600;
+        }
+        .tab-button {
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            border: 1px solid #cbd5e1; /* slate-300 */
+            margin-right: 0.5rem;
+            margin-bottom: 0.5rem;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+        }
+        .tab-button:hover, .tab-button.active {
+            background-color: #38bdf8; /* sky-400 */
+            color: white;
+            border-color: #0ea5e9; /* sky-500 */
+        }
+        .sub-content-section {
+            display: none;
+        }
+        .sub-content-section.active {
+            display: block;
+        }
+        h1, h2, h3, h4 { color: #0369a1; /* sky-700 */ }
+        h1 { font-size: 2.25rem; line-height: 2.5rem; margin-bottom: 1.5rem; font-weight: 700; }
+        h2 { font-size: 1.875rem; line-height: 2.25rem; margin-top: 2rem; margin-bottom: 1rem; font-weight: 600; border-bottom: 2px solid #e2e8f0; /* slate-200 */ padding-bottom: 0.5rem; }
+        h3 { font-size: 1.5rem; line-height: 2rem; margin-top: 1.5rem; margin-bottom: 0.75rem; font-weight: 600; }
+        h4 { font-size: 1.25rem; line-height: 1.75rem; margin-top: 1.25rem; margin-bottom: 0.5rem; font-weight: 600; }
+        p { margin-bottom: 1rem; line-height: 1.625; color: #334155; /* slate-700 */ }
+        ul { margin-bottom: 1rem; margin-left: 1.5rem; list-style-type: disc; color: #334155; /* slate-700 */ }
+        li { margin-bottom: 0.5rem; }
+        table { width: 100%; margin-bottom: 1.5rem; border-collapse: collapse; }
+        th, td { border: 1px solid #cbd5e1; /* slate-300 */ padding: 0.75rem; text-align: left; }
+        th { background-color: #f1f5f9; /* slate-100 */ color: #0369a1; /* sky-700 */ font-weight: 600; }
+        td { color: #475569; /* slate-600 */ }
+        code {
+            background-color: #f1f5f9; /* slate-100 */
+            color: #ef4444; /* red-500 */
+            padding: 0.125rem 0.25rem;
+            border-radius: 0.25rem;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.9em;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px; /* Tailwind max-w-2xl */
+            margin-left: auto;
+            margin-right: auto;
+            height: 320px; /* Tailwind h-80 */
+            max-height: 400px; /* Tailwind max-h-96 */
+            margin-bottom: 1.5rem;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 384px; /* Tailwind h-96 */
+            }
+        }
+        .diagram-container {
+            border: 1px solid #cbd5e1; /* slate-300 */
+            padding: 1rem;
+            border-radius: 0.375rem;
+            margin-bottom: 1rem;
+            background-color: #f8fafc; /* slate-50 */
+        }
+        .diagram-box {
+            background-color: #e0f2fe; /* sky-100 */
+            border: 1px solid #7dd3fc; /* sky-300 */
+            color: #0c4a6e; /* sky-800 */
+            padding: 0.75rem;
+            border-radius: 0.375rem;
+            text-align: center;
+            margin: 0.5rem;
+        }
+        .arrow {
+            font-size: 1.5rem;
+            color: #38bdf8; /* sky-400 */
+            margin: 0 0.5rem;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <header class="bg-sky-700 text-white p-6 shadow-md">
+        <div class="container mx-auto">
+            <h1 class="text-3xl font-bold text-white">Designing a Distributed Queue: An Interactive Guide</h1>
+        </div>
+    </header>
+
+    <div class="container mx-auto flex flex-col md:flex-row mt-8 px-4">
+        <aside class="w-full md:w-1/4 lg:w-1/5 p-4 md:sticky md:top-8 md:self-start mb-8 md:mb-0">
+            <nav class="bg-white p-4 rounded-lg shadow-lg">
+                <h3 class="text-lg font-semibold mb-3 text-sky-700">Navigation</h3>
+                <ul>
+                    <li><a class="nav-link active" data-target="introduction">I. Introduction</a></li>
+                    <li><a class="nav-link" data-target="requirements">II. Requirements Elicitation</a></li>
+                    <li><a class="nav-link" data-target="architecture">III. Core Architectural Design</a></li>
+                    <li><a class="nav-link" data-target="data-management">IV. Data Management</a></li>
+                    <li><a class="nav-link" data-target="reliability">V. Reliability & Resilience</a></li>
+                    <li><a class="nav-link" data-target="operational">VI. Operational Considerations</a></li>
+                </ul>
+            </nav>
+        </aside>
+
+        <main class="w-full md:w-3/4 lg:w-4/5 p-4 bg-white rounded-lg shadow-lg">
+            <section id="introduction" class="content-section active">
+                <h1>I. Introduction to Distributed Queues</h1>
+                <p>This section introduces the fundamental concepts of distributed queues, their purpose, core benefits, and common real-world applications. Understanding these basics is crucial before diving into the complexities of their design and implementation.</p>
+
+                <h3>A. Definition and Fundamental Purpose</h3>
+                <p>A distributed queue is an advanced data structure that operates across multiple interconnected systems or nodes, architected to manage, store, and process data in a decentralized fashion.[1] Unlike traditional queues confined to a single process or server, a distributed queue extends the fundamental First-In-First-Out (FIFO) principle across a distributed environment. This means the queue's data is not stored in a singular location but is instead dispersed, and often replicated, across various network nodes.[1] Each node typically holds a segment of the queue's data and may maintain duplicates to ensure redundancy and facilitate rapid access.[1] The core components of such a system generally include mechanisms for queue management (ensuring correct execution of enqueue and dequeue operations across all nodes), load balancing (distributing tasks or data effectively), failure detection (identifying and reacting to node outages), and data replication (copying data for fault tolerance and durability).[1]</p>
+                <p>The fundamental purpose of distributed queues is to enable seamless and robust communication and coordination among disparate elements within a distributed system.[2] They act as vital conduits, managing the flow of messages between different systems or services [3] and mediating the load between various system components.[4] This capability is particularly crucial in environments demanding high availability, substantial scalability, and robust fault tolerance, such as modern cloud computing platforms and large-scale enterprise applications.[1] By serving as an intermediary buffer, distributed queues facilitate asynchronous communication, allowing components to operate independently and resiliently, thereby decoupling producers of data from its consumers.[2, 4, 5, 6, 7, 8] Message brokers often play a central role in these architectures, overseeing the storage, routing, and delivery of messages.[3, 6, 9, 10, 11, 12]</p>
+                <p>While the internal mechanics of distributed queues involve managing significant complexities—such as ensuring data consistency across nodes, mitigating network latency, and handling sophisticated failure recovery scenarios [1]—a primary value they deliver is the abstraction of these underlying challenges. To the producer and consumer applications, the distributed queue often presents a conceptually simpler interface, frequently resembling the traditional FIFO model. This abstraction empowers application developers to concentrate on core business logic rather than the intricacies of distributed coordination and data management, which are capably handled by the queue system itself. The shift from a centralized queue model to a decentralized one is a foundational principle underpinning the key advantages of distributed queues. Traditional queues often represent single points of failure and scalability bottlenecks. In contrast, by functioning "across multiple systems or nodes" in a "decentralized manner" [1], distributed queues inherently address these limitations, paving the way for enhanced resilience and the capacity to scale.</p>
+                <p>Furthermore, the act of decoupling producers and consumers via a queue [4, 5] directly fosters enhanced system resilience and scalability. When producers and consumers are tightly coupled, a failure or slowdown in one component invariably affects the other. A distributed queue, acting as an intermediary [6, 11], permits producers to dispatch messages even if consumers are temporarily unavailable or operating at a reduced capacity. This buffering capability [2, 4] absorbs transient load spikes and allows consumers to process messages at their own pace, which in turn enables the independent scaling of producer and consumer fleets.[1, 4]</p>
+
+                <h3>B. Core Benefits</h3>
+                <p>Distributed queues offer several compelling benefits that make them indispensable in modern distributed architectures:</p>
+                <ul>
+                    <li><strong>Decoupling of Components:</strong> Producers and consumers operate independently, reducing interdependencies and increasing flexibility.[2, 4, 5, 8]</li>
+                    <li><strong>Asynchronous Processing:</strong> Producers enqueue messages without waiting for consumers, improving system responsiveness.[1, 2, 3, 4, 5, 8]</li>
+                    <li><strong>Scalability:</strong> Systems can scale more easily by adding consumer instances or broker nodes.[1, 4, 7, 8]</li>
+                    <li><strong>Fault Tolerance:</strong> Messages remain in the queue if a consumer fails; replication prevents data loss from broker failures.[1, 2, 3, 4, 7, 8, 9]</li>
+                    <li><strong>Load Balancing and Leveling:</strong> Distributes messages across consumers and smooths out workload peaks.[1, 2, 3, 4, 5, 6, 8]</li>
+                </ul>
+                <p>These benefits are interconnected, creating a synergistic effect that supports modern architectural paradigms like microservices and event-driven architectures.[2, 8, 10]</p>
+
+                <h3>C. Common Real-World Use Cases</h3>
+                <p>The versatility of distributed queues makes them suitable for a wide array of applications:</p>
+                <ul>
+                    <li><strong>Asynchronous Task Processing:</strong> Email notifications, report generation, media processing.[1, 8, 13]</li>
+                    <li><strong>Order Handling and E-commerce Systems:</strong> Managing order lifecycle, payments, inventory updates, especially during sales.[4, 13]</li>
+                    <li><strong>Microservice Communication:</strong> Backbone for asynchronous message-based communication between services.[8, 10, 13, 14]</li>
+                    <li><strong>Load Balancing and Workload Distribution:</strong> Distributing requests across workers or servers.[1, 4]</li>
+                    <li><strong>Data Streaming and Real-Time Analytics:</strong> Ingesting and processing large volumes of streaming data (e.g., Apache Kafka).[2, 8]</li>
+                    <li><strong>Internet of Things (IoT) Applications:</strong> Buffering and processing data from numerous devices.[8, 13]</li>
+                    <li><strong>Event-Driven Architectures (EDA):</strong> Transporting events between producers and consumers.[2, 3]</li>
+                    <li><strong>Database Operations and Maintenance:</strong> Scheduling backups and other maintenance tasks.[13]</li>
+                    <li><strong>Handling Data of Varying Criticality:</strong> Differentiating processing for messages based on urgency or reliability needs.[15]</li>
+                </ul>
+                <p>A common thread is the queue's ability to introduce "time-shift" (deferring work) and "load-shift" (distributing workload), highlighting the need for features like message prioritization and TTL.[2, 5, 6, 15]</p>
+            </section>
+
+            <section id="requirements" class="content-section">
+                <h1>II. Requirements Elicitation</h1>
+                <p>This section details the functional and non-functional requirements crucial for designing a robust distributed queue system. These requirements guide architectural decisions and define the system's capabilities and quality attributes.</p>
+
+                <h3>A. Functional Requirements</h3>
+                <p>Functional requirements define the specific operations and behaviors the system must support.</p>
+                <div class="functional-reqs-tabs mb-4">
+                    <button class="tab-button active" data-target="fr-apis">1. Message APIs</button>
+                    <button class="tab-button" data-target="fr-structure">2. Message Structure</button>
+                    <button class="tab-button" data-target="fr-admin">3. Admin Operations</button>
+                </div>
+
+                <div id="fr-apis" class="sub-content-section active">
+                    <h4>1. Message Production and Consumption APIs</h4>
+                    <p>The system must provide APIs for producers to <code>enqueue</code> messages and for consumers to <code>dequeue</code> messages.[1, 12] Key aspects include:</p>
+                    <ul>
+                        <li>Allowing message payload and optional metadata (priority, routing keys).[6, 12]</li>
+                        <li>Supporting different consumption modes (polling, push-based).</li>
+                        <li>Enabling consumers to acknowledge successful message processing for reliable delivery.[12, 16, 17]</li>
+                        <li>Considering various communication protocols (HTTP/REST, gRPC, AMQP, Kafka protocol).[18, 19, 20, 21]</li>
+                        <li>Providing client libraries/SDKs for easier integration.[22, 23]</li>
+                    </ul>
+                    <p>APIs must balance simplicity with control for advanced features like delivery guarantees or ordering.[2, 3, 5]</p>
+                </div>
+                <div id="fr-structure" class="sub-content-section">
+                    <h4>2. Message Structure and Format (Headers, Payload, Metadata)</h4>
+                    <p>A standardized message structure is essential. A typical message includes:[12]</p>
+                    <ul>
+                        <li><strong>Payload (Content):</strong> The actual data.</li>
+                        <li><strong>Headers/Metadata:</strong> Message ID, timestamp, priority, routing info, etc.[12]</li>
+                    </ul>
+                    <p>Other considerations:</p>
+                    <ul>
+                        <li>Support for efficient serialization formats (JSON, Avro, Protocol Buffers).[9]</li>
+                        <li>Defined maximum message size and handling for oversized messages.[9]</li>
+                        <li>Adoption of standards like CloudEvents for metadata to improve interoperability.[24, 25]</li>
+                    </ul>
+                    <p>A clear, extensible metadata schema is critical for routing, priority, tracing, and auditing.[6, 12]</p>
+                </div>
+                <div id="fr-admin" class="sub-content-section">
+                    <h4>3. Administrative Operations</h4>
+                    <p>Interfaces for management, monitoring, and operational control are required:</p>
+                    <ul>
+                        <li><strong>Queue/Topic Management:</strong> Create, configure, inspect, delete queues/topics (e.g., retention policies, replication factors).[1, 6, 22, 26, 27]</li>
+                        <li><strong>Security Management:</strong> Manage users, roles, permissions.</li>
+                        <li><strong>Cluster Management:</strong> Add/remove broker nodes, view cluster status, trigger rebalancing.</li>
+                        <li><strong>Monitoring Endpoints:</strong> Expose key metrics for system health and performance.</li>
+                    </ul>
+                    <p>These APIs are vital for manageability, observability, and dynamic adaptation of the system, supporting automation.[5, 27]</p>
+                </div>
+
+                <h3>B. Non-Functional Requirements (Key System Characteristics)</h3>
+                <p>Non-functional requirements define the quality attributes critical for success in a distributed environment. Click on each requirement to see more details.</p>
+                <div class="nfr-tabs mb-4">
+                    <button class="tab-button active" data-target="nfr-scalability">Scalability</button>
+                    <button class="tab-button" data-target="nfr-availability">High Availability</button>
+                    <button class="tab-button" data-target="nfr-durability">Message Durability</button>
+                    <button class="tab-button" data-target="nfr-delivery">Delivery Guarantees</button>
+                    <button class="tab-button" data-target="nfr-ordering">Message Ordering</button>
+                    <button class="tab-button" data-target="nfr-latency">Latency</button>
+                    <button class="tab-button" data-target="nfr-throughput">Throughput</button>
+                    <button class="tab-button" data-target="nfr-security">Security</button>
+                    <button class="tab-button" data-target="nfr-consistency">Data Consistency</button>
+                </div>
+
+                <div id="nfr-content-area">
+                    </div>
+
+                <div class="chart-container mt-8">
+                    <canvas id="nfrRadarChart"></canvas>
+                </div>
+                <p class="text-sm text-center text-slate-500">Illustrative Radar Chart: Relative importance/complexity of Non-Functional Requirements in a typical high-performance distributed queue. Actual emphasis varies by use case.</p>
+
+                <h4>Table: Non-Functional Requirements and Their Design Implications</h4>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Requirement</th>
+                            <th>Key Design Choices & Implications</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Scalability</td><td>Horizontal scaling (adding nodes), partitioning, efficient rebalancing, stateless components where possible. [1, 4, 6, 7]</td></tr>
+                        <tr><td>High Availability</td><td>Data replication across fault domains, automated leader election, redundant components, robust failure detection. [1, 3, 9, 28, 29, 30]</td></tr>
+                        <tr><td>Message Durability</td><td>Persistent storage (disk), replication factor, synchronous/asynchronous writes, write-ahead logs (WAL). [9, 37, 38, 39]</td></tr>
+                        <tr><td>Message Delivery Guarantees</td><td>Acknowledgment mechanisms (producer-broker, broker-consumer), idempotency support (producer/consumer), transactional capabilities. [3, 9, 16, 17, 36]</td></tr>
+                        <tr><td>Message Ordering</td><td>Per-partition/group FIFO, message keys for routing to ordered partitions, single dispatcher for global order (trade-off with scalability). [1, 42, 43, 44, 45, 48, 50]</td></tr>
+                        <tr><td>Latency Constraints</td><td>Efficient network protocols, in-memory caching where feasible, optimized disk I/O, asynchronous operations, choice of replication synchronicity. [1, 3, 20]</td></tr>
+                        <tr><td>Throughput Requirements</td><td>Parallel processing via partitioning, message batching, efficient serialization, optimized broker logic. [2, 36, 38, 41]</td></tr>
+                        <tr><td>Security</td><td>Authentication (mTLS, JWT, etc.), Authorization (ACLs, RBAC), Encryption (TLS in transit, AES at rest). [12, 54, 56, 61, 68, 69]</td></tr>
+                        <tr><td>Data Consistency</td><td>Choice of consistency model (Strong, Eventual), consensus protocols for metadata (Raft, Paxos), replication strategy, CAP theorem trade-offs. [1, 28, 51, 71, 72, 74]</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section id="architecture" class="content-section">
+                <h1>III. Core Architectural Design</h1>
+                <p>This section explores the core components of a distributed queue system, common architectural models, and API design considerations. These elements form the backbone of how messages are managed and processed.</p>
+
+                <h3>A. System Components Overview</h3>
+                <p>A comprehensive distributed queue system generally involves the following core components:</p>
+                <div class="component-tabs mb-4">
+                    <button class="tab-button active" data-target="comp-producers">1. Producers</button>
+                    <button class="tab-button" data-target="comp-consumers">2. Consumers & Groups</button>
+                    <button class="tab-button" data-target="comp-brokers">3. Message Brokers</button>
+                    <button class="tab-button" data-target="comp-storage">4. Message Storage</button>
+                    <button class="tab-button" data-target="comp-coordination">5. Coordination Service</button>
+                    <button class="tab-button" data-target="comp-metadata">6. Metadata Management</button>
+                </div>
+                <div id="component-content-area">
+                     </div>
+
+                <h3>B. Architectural Models: Centralized Broker vs. Broker-less</h3>
+                <p>Distributed queue systems can be broadly categorized based on their reliance on message brokers.</p>
+                <div class="diagram-container my-4">
+                    <h4 class="text-center mb-2">Architectural Models Comparison</h4>
+                    <div class="flex flex-col md:flex-row justify-around">
+                        <div class="md:w-1/2 p-2">
+                            <h5 class="font-semibold text-center mb-2 text-sky-600">Broker-centric Model (e.g., Kafka, RabbitMQ)</h5>
+                            <div class="diagram-box">Producer</div>
+                            <div class="text-center arrow">⬇️</div>
+                            <div class="diagram-box">Broker Cluster (Manages Queues, Routing, Storage)</div>
+                            <div class="text-center arrow">⬇️</div>
+                            <div class="diagram-box">Consumer</div>
+                            <p class="text-sm mt-2">Messages flow through a (typically clustered) broker layer. Brokers handle routing, persistence, and coordination. Clients can be simpler.</p>
+                        </div>
+                        <div class="md:w-1/2 p-2 mt-4 md:mt-0">
+                            <h5 class="font-semibold text-center mb-2 text-sky-600">Broker-less Model (e.g., ZeroMQ aspects)</h5>
+                            <div class="diagram-box">Producer (Client Library with Logic)</div>
+                            <div class="text-center arrow">↔️ (Direct or P2P-like)</div>
+                            <div class="diagram-box">Consumer (Client Library with Logic)</div>
+                            <p class="text-sm mt-2">Nodes communicate more directly, or broker responsibilities are minimized/distributed. Client libraries often handle more logic (discovery, routing).</p>
+                        </div>
+                    </div>
+                </div>
+                <p>The distinction can be nuanced. "Broker-less" often implies lighter-weight brokers or more intelligence in client libraries. Pulsar offers a hybrid with stateless brokers and a separate storage layer (BookKeeper).[7, 22, 35]</p>
+                <h4>Table: Comparison of Broker-centric vs. Broker-less Architectural Models</h4>
+                <table>
+                    <thead><tr><th>Aspect</th><th>Broker-centric Model</th><th>Broker-less Model</th></tr></thead>
+                    <tbody>
+                        <tr><td>Message Flow</td><td>Producer -> Broker Cluster -> Consumer</td><td>Producer -> (Network/Client Library Logic) -> Consumer</td></tr>
+                        <tr><td>Complexity</td><td>Broker management, clustering, coordination service. Client can be simpler.</td><td>Client complexity higher (discovery, routing, buffering). Simpler or no central server.</td></tr>
+                        <tr><td>Scalability</td><td>Scales by adding broker nodes and consumer instances. Broker can be bottleneck.</td><td>Scales with number of producer/consumer nodes. May face discovery/coordination limits.</td></tr>
+                        <tr><td>Fault Tolerance</td><td>Relies on broker clustering, data replication, leader election.</td><td>Relies on client-side retry logic, potentially peer-to-peer replication if supported.</td></tr>
+                        <tr><td>Durability</td><td>Typically managed by brokers (disk persistence, replication).</td><td>Responsibility often on client or requires specialized persistent peers.</td></tr>
+                        <tr><td>Central Control/Monitor</td><td>Easier to monitor and control centrally at the broker layer.</td><td>Monitoring and control are more decentralized and potentially complex.</td></tr>
+                        <tr><td>Typical Use Cases</td><td>Enterprise messaging, data streaming, reliable task queuing.</td><td>Low-latency inter-process communication, embedded systems, specific HPC scenarios.</td></tr>
+                    </tbody>
+                </table>
+
+                <h3>C. API Design (REST, gRPC, Protocol considerations like AMQP)</h3>
+                <p>APIs are needed for data plane (producing/consuming messages) and control plane (admin operations).[20, 28] Protocol choices include:</p>
+                <ul>
+                    <li><strong>HTTP/REST:</strong> Common for admin APIs; simple, firewall-friendly.[20]</li>
+                    <li><strong>gRPC:</strong> Modern RPC, good performance, streaming, typed contracts; suitable for data and control planes.[20]</li>
+                    <li><strong>Specialized Messaging Protocols:</strong>
+                        <ul>
+                            <li><strong>AMQP:</strong> Feature-rich binary protocol (RabbitMQ).[14, 18, 19, 80, 85]</li>
+                            <li><strong>MQTT:</strong> Lightweight pub/sub for IoT/mobile.</li>
+                            <li><strong>Custom Binary Protocols:</strong> Optimized for performance (Kafka, Pulsar).[22, 35, 52]</li>
+                        </ul>
+                    </li>
+                </ul>
+                <p>A system might offer multiple protocols: a high-performance binary one for data plane and REST/gRPC for management.</p>
+                <h4>Table: API Protocol Considerations</h4>
+                <table>
+                    <thead><tr><th>Protocol</th><th>Performance</th><th>Feature Support</th><th>Interoperability</th><th>Client Complexity</th><th>Typical Use</th></tr></thead>
+                    <tbody>
+                        <tr><td>Custom Binary TCP</td><td>Very High</td><td>Tailored</td><td>Low (specific clients)</td><td>Potentially High</td><td>Data Plane (Kafka, Pulsar)</td></tr>
+                        <tr><td>AMQP</td><td>High</td><td>Rich (Routing, QoS)</td><td>High (Standard)</td><td>Moderate</td><td>Data/Control Plane (RabbitMQ)</td></tr>
+                        <tr><td>MQTT</td><td>Moderate</td><td>Pub/Sub, QoS</td><td>High (IoT)</td><td>Low</td><td>IoT, Lightweight Pub/Sub</td></tr>
+                        <tr><td>REST (HTTP/1.1)</td><td>Lower</td><td>Basic</td><td>Very High</td><td>Low</td><td>Control Plane, Simple P/C</td></tr>
+                        <tr><td>gRPC (HTTP/2)</td><td>High</td><td>Streaming, Typed</td><td>Growing</td><td>Moderate</td><td>Control Plane, Data Plane</td></tr>
+                    </tbody>
+                </table>
+            </section>
+
+            <section id="data-management" class="content-section">
+                <h1>IV. Data Management and Message Handling</h1>
+                <p>This section covers strategies for partitioning data for scalability, replicating it for durability, ensuring consistency, routing messages accurately, managing acknowledgments for reliable delivery, and maintaining message integrity.</p>
+                <div class="data-mgmnt-tabs mb-4">
+                    <button class="tab-button active" data-target="dm-partitioning">A. Partitioning</button>
+                    <button class="tab-button" data-target="dm-replication">B. Replication</button>
+                    <button class="tab-button" data-target="dm-consistency">C. Consistency</button>
+                    <button class="tab-button" data-target="dm-routing">D. Routing</button>
+                    <button class="tab-button" data-target="dm-ack">E. Acknowledgement</button>
+                    <button class="tab-button" data-target="dm-integrity">F. Integrity</button>
+                </div>
+                <div id="data-mgmnt-content-area">
+                    </div>
+            </section>
+
+            <section id="reliability" class="content-section">
+                <h1>V. Ensuring Reliability and Resilience</h1>
+                <p>This section focuses on mechanisms for fault tolerance, handling problematic messages (DLQs), retry strategies, idempotency for reliable delivery, and backpressure management to prevent system overload.</p>
+                 <div class="reliability-tabs mb-4">
+                    <button class="tab-button active" data-target="rel-fault-tolerance">A. Fault Tolerance</button>
+                    <button class="tab-button" data-target="rel-dlq">B. Dead Letter Queues</button>
+                    <button class="tab-button" data-target="rel-retry">C. Retry Mechanisms</button>
+                    <button class="tab-button" data-target="rel-idempotency">D. Idempotency</button>
+                    <button class="tab-button" data-target="rel-backpressure">E. Backpressure</button>
+                </div>
+                <div id="reliability-content-area">
+                    </div>
+            </section>
+
+            <section id="operational" class="content-section">
+                <h1>VI. Operational Considerations</h1>
+                <p>This section discusses critical operational aspects for maintaining a healthy and efficient distributed queue system, including monitoring, scalability patterns, and load balancing techniques.</p>
+                <div class="ops-tabs mb-4">
+                    <button class="tab-button active" data-target="ops-monitoring">A. Monitoring & Observability</button>
+                    <button class="tab-button" data-target="ops-scalability">B. Scalability Patterns</button>
+                    <button class="tab-button" data-target="ops-loadbalancing">C. Load Balancing</button>
+                </div>
+                <div id="ops-content-area">
+                    </div>
+            </section>
+        </main>
+    </div>
+
+    <footer class="text-center p-8 mt-8 text-sm text-slate-500">
+        Interactive SPA based on "Designing a Distributed Queue: A Comprehensive Technical Report".
+    </footer>
+
+<script>
+    const navLinks = document.querySelectorAll('.nav-link');
+    const contentSections = document.querySelectorAll('.content-section');
+    let currentNFRChart = null;
+    let currentQueueDepthChart = null;
+
+    const nfrData = {
+        scalability: {
+            title: "1. Scalability (Horizontal and Vertical)",
+            content: "<p>The system must handle growing data and requests without performance degradation.[1, 4, 7, 8]</p><ul><li><strong>Horizontal Scalability:</strong> Add more nodes (brokers, consumers).[1, 4, 7, 8]</li><li><strong>Consumer Scalability:</strong> Scale consumers based on load.[2]</li><li><strong>Throughput/Storage/Connection Scalability:</strong> Increase message rate, storage capacity, and concurrent connections.</li><li><strong>Capacity Planning:</strong> Design should facilitate future growth planning.[2]</li></ul><p>Scalability applies to throughput, storage, number of queues, and geographic distribution. Elasticity (scaling up and down) is key for resource optimization.</p>"
+        },
+        availability: {
+            title: "2. High Availability and Fault Tolerance",
+            content: "<p>The system must remain operational despite component failures.</p><ul><li><strong>No Single Point of Failure (SPOF).</strong></li><li><strong>Redundancy:</strong> Replicate data and critical components.[1, 3, 9]</li><li><strong>Automated Failover:</strong> Auto-detect failures and failover to replicas (e.g., via leader election).[1, 28, 29, 30]</li><li><strong>Data Durability:</strong> Acknowledged messages should not be lost.</li><li><strong>Graceful Degradation:</strong> Offer reduced functionality rather than complete shutdown.</li><li><strong>Network Partition Tolerance:</strong> Handle network splits (CAP theorem), with recovery for split-brain.[3, 31, 32]</li></ul><p>Fault tolerance includes service continuity, state management (offset tracking [30, 33, 34]), and handling cluster inconsistencies like split-brain.[31, 32] Fault domains (racks, AZs, regions) are important for replica placement.[22, 35]</p>"
+        },
+        durability: {
+            title: "3. Message Durability and Persistence",
+            content: "<p>Messages should be safely stored until successfully processed.</p><ul><li><strong>Persistence Options:</strong> Disk-based for durability, in-memory for performance.[2, 9, 36]</li><li><strong>Replication for Durability:</strong> Write messages to multiple nodes before producer acknowledgment.[1, 3, 36, 37, 38]</li><li><strong>Configurable Durability:</strong> Level of durability (replicas, fsync) might be configurable per queue/message (e.g., RabbitMQ durable messages [39], Disque AOF [37]).</li></ul><p>Durability is a spectrum impacting performance and cost. Configurable persistence allows balancing these based on data criticality.</p>"
+        },
+        delivery: {
+            title: "4. Message Delivery Guarantees",
+            content: "<p>The system must provide clear guarantees about message delivery.</p><ul><li><strong>At-most-once:</strong> Zero or one delivery; messages may be lost, never duplicated.[3]</li><li><strong>At-least-once:</strong> One or more deliveries; no loss, but duplicates possible (needs consumer idempotency).[3, 36]</li><li><strong>Exactly-once:</strong> Exactly one delivery; no loss, no duplicates. Complex, often involves broker-client coordination (idempotent producers, transactions).[3, 36, 40, 41]</li></ul><p>Acknowledgment mechanisms are fundamental.[9] Exactly-once often requires idempotent consumer design, even with system support.</p>"
+        },
+        ordering: {
+            title: "5. Message Ordering (FIFO, Best-effort, Group-based, Global)",
+            content: "<p>The system may need to preserve message order.</p><ul><li><strong>FIFO (First-In-First-Out):</strong> Messages processed in enqueue order.[1, 3]</li><li><strong>Per-Partition/Group Ordering:</strong> Order within a partition/group, not globally (e.g., Kafka [42, 43], SQS FIFO [44]). Allows parallelism.</li><li><strong>Global Ordering:</strong> Strict order across all messages; challenging, impacts scalability.[42, 45-49]</li><li><strong>Best-Effort Ordering:</strong> General order, no strict guarantees (e.g., SQS Standard [44]).</li></ul><p>Strict global ordering conflicts with high parallelism. Per-partition/group ordering is a common compromise.[42, 43, 50]</p>"
+        },
+        latency: {
+            title: "6. Latency Constraints",
+            content: "<p>The system should meet defined latency targets.</p><ul><li><strong>End-to-End Latency:</strong> Produce to successful consumption.</li><li><strong>Publish Latency:</strong> Producer send to broker acknowledgment.</li><li><strong>Consume Latency:</strong> Consumer retrieve message.</li></ul><p>Factors: network, disk I/O, replication strategy, queue depth, processing overhead.[1, 2, 3, 20] Low latency requires optimizing network, storage, replication, and broker/consumer efficiency.</p>"
+        },
+        throughput: {
+            title: "7. Throughput Requirements",
+            content: "<p>The system must process a certain number of messages per second.</p><ul><li><strong>Peak Load:</strong> Expected peak message rate.</li><li><strong>Sustainable Throughput:</strong> Continuous operational rate.</li></ul><p>High throughput is a common goal (e.g., Kafka [2, 36, 52, 53]). Achieved via parallelism (partitioning, multiple consumers) and batching, which can trade off with ordering/latency.[36, 41] Load testing is crucial.[2]</p>"
+        },
+        security: {
+            title: "8. Security (Authentication, Authorization, Encryption)",
+            content: "<p>Protect messages and infrastructure from unauthorized access/tampering.</p><ul><li><strong>Authentication:</strong> Verify identities (producers, consumers, admins) via various mechanisms (mTLS, JWTs, Kerberos, OAuth).[2, 12, 54-59]</li><li><strong>Authorization:</strong> Enforce access control (ACLs, RBAC).[3, 29, 30, 56-67]</li><li><strong>Encryption in Transit:</strong> Protect data over network (TLS/SSL).[2, 12, 54, 55, 59, 67, 68]</li><li><strong>Encryption at Rest:</strong> Protect stored data (AES).[2, 12, 68, 69]</li><li><strong>Secure Administrative Access.</strong></li></ul><p>A multi-layered approach is imperative, with granular authorization enhancing security but potentially increasing management complexity.[65, 66]</p>"
+        },
+        consistency: {
+            title: "9. Data Consistency",
+            content: "<p>Ensure data (messages, queue state, offsets) is consistent across distributed components.</p><ul><li><strong>Node Consistency:</strong> Replicas of a partition/queue should be consistent.</li><li><strong>Metadata Consistency:</strong> Topic/partition info, offsets managed consistently (often by coordination service).[1, 30]</li><li><strong>CAP Theorem:</strong> Balance Consistency, Availability, Partition Tolerance. Queues often prioritize A & P, leading to eventual consistency.[28, 51, 70-74]</li><li><strong>Consistency Models:</strong> Strong, Eventual, Causal, etc., for different parts.[71, 72]</li><li><strong>Consensus Protocols (Paxos, Raft):</strong> For strong consistency of critical state (leader election, metadata).[28, 29, 45, 70-74]</li></ul><p>Critical metadata often needs strong consistency (Raft, Paxos [29, 30, 74]). Message data might offer tunable consistency (e.g., Kafka <code>acks</code> [75]).</p>"
+        }
+    };
+
+    const componentData = {
+        producers: {
+            title: "1. Producers",
+            content: "<p>Producers create and send messages (events, tasks) to the queue system.[6-8, 10-12, 50, 76] They define content and metadata (priority, keys).[12] Interact with brokers to publish.[14, 18, 19] May handle broker <code>acks</code> for reliability.[16, 75] Can use partitioning strategies (key-based, round-robin) for load distribution and ordering (e.g., Kafka).[50, 77]</p><p>Producers can be 'dumb' (simple forwarding) or 'smart' (client-side partitioning, batching, compression, ack management). Kafka producers are often sophisticated.[50] RabbitMQ producers send to exchanges, with routing logic in the broker.[14] For at-least/exactly-once delivery, producers need retry logic and possibly idempotency keys.[40, 41]</p>"
+        },
+        consumers: {
+            title: "2. Consumers & Consumer Groups",
+            content: "<p>Consumers retrieve and process messages from the queue.[6-8, 10-12, 50, 76]</p><ul><li><strong>Consumer Groups (e.g., Kafka):</strong> Multiple consumer instances collectively consume from topics. Each partition is typically consumed by one consumer in a group, enabling parallel processing.[33, 76, 78]</li><li><strong>Offset Management:</strong> Consumers track their progress (last processed message position in a partition) via offsets. Offsets are committed to the messaging system (e.g., Kafka's <code>__consumer_offsets</code> topic [33]) or external store.[30, 33, 34, 50, 76]</li><li><strong>Rebalancing:</strong> When consumer group membership or topic metadata changes, partitions are reassigned among active consumers. Modern protocols (e.g., Kafka's incremental cooperative rebalancing [33]) aim to minimize disruption. Static membership can reduce unnecessary rebalances.[33, 34, 79]</li></ul><p>Offset management is critical for fault tolerance and delivery guarantees. Rebalancing, while essential, can be complex; modern protocols improve availability during this process.[33]</p>"
+        },
+        brokers: {
+            title: "3. Message Brokers",
+            content: "<p>Brokers are server components acting as intermediaries. They receive, store (if needed), manage queues/topics, and deliver messages.[3, 6, 8-12] Typically operate as a cluster for scalability and HA.[9] Handle routing, persistence, replication, security.</p><p>Broker responsibilities vary. RabbitMQ is a 'smart broker' with sophisticated routing.[14, 19, 80] Kafka brokers rely more on consumer groups for load distribution.[50, 52, 53, 76-78, 81, 82] Pulsar brokers are largely stateless, offloading storage to BookKeeper, simplifying scaling/recovery.[22, 35] Kafka brokers are stateful (manage partition data locally).</p>"
+        },
+        storage: {
+            title: "4. Message Storage",
+            content: "<p>Responsible for physical/logical message storage.</p><ul><li><strong>Queue Nodes/Message Store:</strong> Servers where queue data resides. Can be in-memory (performance, lower durability) or disk-based (persistence, durability).[1, 7, 9] High reliability is key.[7]</li><li><strong>Persistence Mechanisms:</strong> Disk writes and replication ensure messages survive failures (e.g., RabbitMQ durable queues [39], Disque AOF [37]). Replication factor impacts durability.[36, 38]</li><li><strong>Log-based Storage (Kafka, Pulsar):</strong> Messages appended to immutable, ordered logs (topics/partitions).[35, 50, 52, 53, 77, 78, 83, 84] Retained by policy, not deleted on consumption. Allows multiple consumers, replayability. Logs often segmented.[83, 84]</li><li><strong>Traditional Queue-based Storage (RabbitMQ, SQS):</strong> Messages stored in queues, typically deleted after consumer ack.[14, 27, 85-87]</li></ul><p>Log-based storage offers replay, multiple consumer groups, long retention for stream processing.[10, 52] Traditional queues suit task distribution. Tiered storage (e.g., Pulsar to S3/GCS [22, 35]) can balance cost and performance for long retention.</p>"
+        },
+        coordination: {
+            title: "5. Coordination Service (e.g., ZooKeeper, KRaft, etcd)",
+            content: "<p>Manages cluster state, broker config, leader election, service discovery.[22, 28-30, 35, 50, 52, 53, 76, 77, 79, 81, 88-91]</p><ul><li><strong>Apache ZooKeeper:</strong> Historically popular (older Kafka, Pulsar).[22, 29, 30, 35, 76, 81] Manages config, leader election, ACLs, locks, membership. Uses znodes, ensembles, sessions, watches, quorums.[29, 30]</li><li><strong>KRaft (Kafka Raft Metadata mode):</strong> Newer Kafka uses internal Raft-based consensus among controller nodes, eliminating ZooKeeper dependency.[52, 74, 77, 79, 88-91]</li><li><strong>etcd:</strong> Pulsar also supports etcd.[22, 35]</li></ul><p>Coordination service reliability, performance, and scalability directly impact the queue system. Suboptimal ZooKeeper can cause instability.[30, 81] KRaft aims to simplify and improve performance.[79, 88]</p>"
+        },
+        metadata: {
+            title: "6. Metadata Management",
+            content: "<p>Storing and managing critical info about queue system state and config: topics, partitions (locations, leader/follower), broker configs, consumer group info (offsets), security policies, cluster config.[12, 28, 30, 92]</p><p>Managed by coordination service (ZooKeeper/KRaft in Kafka [30, 79], ZooKeeper/etcd in Pulsar [22, 35]). Accuracy and consistency are paramount. Stale metadata (e.g., partition leadership) can cause errors. Lost offsets disrupt processing.[33] Metadata store must be HA, fault-tolerant, and strongly consistent.</p>"
+        }
+    };
+
+    const dataMgmntData = {
+        partitioning: {
+            title: "A. Data Partitioning (Sharding) Strategies",
+            content: `
+                <p>Partitioning divides a logical queue/topic into smaller, independent segments (partitions/shards) hosted on different brokers, distributing load for scalability and parallelism.[3, 6, 50]</p>
+                <h4>Common Partitioning Techniques [99]:</h4>
+                <ul>
+                    <li><strong>Range-based:</strong> By continuous key range (e.g., timestamp). Pros: Good for range queries. Cons: Hotspots, complex rebalancing.</li>
+                    <li><strong>Hash-based:</strong> Hash of a key determines partition. Pros: Even distribution. Cons: Inefficient range queries, rehashing on scaling.</li>
+                    <li><strong>Directory-based:</strong> Lookup table maps keys to partitions. Pros: Flexible placement, easier rebalancing. Cons: Directory bottleneck/SPOF, lookup latency.</li>
+                    <li><strong>Geographical:</strong> By user location/data origin. Pros: Reduced regional latency, data residency. Cons: Uneven distribution, complex cross-geo queries.</li>
+                    <li><strong>Dynamic:</strong> System auto-adjusts partitions by load/size. Pros: Optimal resource use. Cons: High complexity, disruptive rebalancing.</li>
+                </ul>
+                <p><strong>Shard Key Selection:</strong> Critical for even distribution and efficient queries (e.g., customer ID, order ID). Kafka uses message key for partitioning, ensuring same-key messages go to same partition for ordering.[46, 50, 77] Poor keys cause hotspots.[46]</p>
+                <h4>Table: Data Partitioning (Sharding) Techniques Comparison</h4>
+                <table>
+                    <thead><tr><th>Technique</th><th>How it Works</th><th>Key Selection</th><th>Pros</th><th>Cons</th><th>Use Cases</th></tr></thead>
+                    <tbody>
+                        <tr><td>Range-based</td><td>Data divided by a continuous range of key values.[99]</td><td>Time-based or ordered IDs.</td><td>Good for range queries; logical data grouping.</td><td>Potential for hotspots; uneven data distribution; complex rebalancing.[99]</td><td>Time-series data; ordered event streams.</td></tr>
+                        <tr><td>Hash-based</td><td>Hash function on key determines partition.[99]</td><td>High-cardinality keys.</td><td>Good data distribution; simple.</td><td>Range queries difficult; rehashing on scaling.[99]</td><td>General purpose; even load distribution.</td></tr>
+                        <tr><td>Directory-based</td><td>Lookup table maps keys to partitions.[99]</td><td>Any mappable key.</td><td>Flexible placement; easier rebalancing.</td><td>Directory bottleneck/SPOF; lookup latency.[99]</td><td>Fine-grained control over placement.</td></tr>
+                        <tr><td>Geographical</td><td>Data partitioned by geographic location.[99]</td><td>User location, data origin.</td><td>Reduced regional latency; data residency.</td><td>Uneven distribution; complex cross-geo queries.[99]</td><td>Global apps with regional needs.</td></tr>
+                        <tr><td>Dynamic</td><td>System automatically adjusts shards.[99]</td><td>System monitoring.</td><td>Optimal resource use; adaptive.</td><td>High complexity; disruptive rebalancing.[99]</td><td>Highly variable workloads.</td></tr>
+                    </tbody>
+                </table>`
+        },
+        replication: {
+            title: "B. Data Replication Strategies",
+            content: `
+                <p>Creating multiple copies (replicas) of data across nodes/data centers for durability and high availability.[1, 3, 28, 35, 36, 37, 38, 42, 52, 53, 78, 82]</p>
+                <h4>Common Replication Models:</h4>
+                <ul>
+                    <li><strong>Leader-Follower (Primary-Replica):</strong> One leader per partition handles writes, propagates to followers. Reads may be from followers.[28, 52, 53, 70, 78]</li>
+                    <li><strong>Synchronous Replication:</strong> Leader waits for follower ack before acking producer. Pros: Strong consistency, high durability. Cons: Higher latency, blocked by slow followers.[37, 51, 70]</li>
+                    <li><strong>Asynchronous Replication:</strong> Leader acks producer locally, replicates in background. Pros: Lower latency, higher throughput. Cons: Risk of data loss on leader failure, eventual consistency.[37, 51, 70]</li>
+                    <li><strong>Semi-Synchronous:</strong> Leader waits for a subset of followers synchronously. Balances durability/performance.[51]</li>
+                    <li><strong>Quorum-Based (e.g., Kafka ISR):</strong> Leader maintains In-Sync Replicas (ISR). Write committed after all ISRs receive it. Only ISRs eligible for leader election. <code>min.insync.replicas</code> for durability/availability trade-off.[52, 53, 78, 82]</li>
+                    <li><strong>Replication Factor:</strong> Total copies (leader + followers). Higher factor = more redundancy, higher cost/overhead.[36, 38]</li>
+                </ul>
+                <p>Choice balances durability/consistency vs. performance. Configurable replication is ideal. ISR management is crucial for consistency/availability during failover.[78, 82]</p>
+                <h4>Table: Data Replication Strategies Comparison</h4>
+                <table>
+                    <thead><tr><th>Strategy</th><th>Description</th><th>Consistency</th><th>Durability</th><th>Performance Impact</th><th>Pros</th><th>Cons</th></tr></thead>
+                    <tbody>
+                        <tr><td>Synchronous</td><td>Leader waits for all/quorum followers to commit.[51, 70]</td><td>Strong</td><td>High</td><td>Higher Latency</td><td>No data loss on leader fail (if acked).</td><td>Slowest replica dictates; can block.</td></tr>
+                        <tr><td>Asynchronous</td><td>Leader acks producer locally, replicates later.[51, 70]</td><td>Eventual</td><td>Lower</td><td>Lower Latency</td><td>Fast writes; not blocked by slow followers.</td><td>Risk of data loss; stale reads.</td></tr>
+                        <tr><td>Semi-Synchronous</td><td>Leader waits for subset of followers sync.[51]</td><td>Stronger than async</td><td>Better than async</td><td>Moderate Latency</td><td>Balances durability & performance.</td><td>Some latency; complexity.</td></tr>
+                        <tr><td>Quorum-based / ISR</td><td>Leader waits for ack from ISR set.[82]</td><td>Strong (among ISRs)</td><td>High (if min.isr > 1)</td><td>Depends on ISR size, acks</td><td>Configurable durability/availability.</td><td>Can reduce availability if ISR shrinks.</td></tr>
+                    </tbody>
+                </table>`
+        },
+        consistency: {
+            title: "C. Consistency Models",
+            content: `
+                <p>Ensures all nodes/clients see the same data or data in a predictable way.[1, 7]</p>
+                <h4>Key Consistency Concepts:</h4>
+                <ul>
+                    <li><strong>CAP Theorem:</strong> Impossible for Consistency, Availability, Partition Tolerance simultaneously. Queues often choose A & P, leading to eventual consistency.[28, 51, 70-72]</li>
+                    <li><strong>Strong Consistency (Linearizability):</strong> Reads get latest completed write. Operations appear atomic, globally ordered. Challenges: Higher latency, reduced availability.[71, 72] Use: Critical metadata.</li>
+                    <li><strong>Sequential Consistency:</strong> Operations seen in same sequence by all nodes, not necessarily real-time.[72]</li>
+                    <li><strong>Causal Consistency:</strong> Causally related operations seen in order. Concurrent ops may differ.[71, 72] Use: Messaging apps where replies follow messages.</li>
+                    <li><strong>Eventual Consistency:</strong> Given no new updates, all replicas eventually converge. Pros: High availability, low latency. Cons: Temporary inconsistencies.[2, 71, 72] Use: Message data replication. Session guarantees (Read-Your-Writes) can mitigate.[72]</li>
+                    <li><strong>Consensus Protocols (Paxos, Raft):</strong> Achieve agreement for strongly consistent replicated state machines (metadata, leader election). Raft often easier.[28, 29, 45, 70-74] Kafka KRaft uses Raft.[52, 71, 74, 79, 88-91]</li>
+                </ul>
+                <p>Different parts may use different models. Critical metadata (cluster membership, offsets) needs strong consistency (Raft/Paxos).[29, 30, 74] Message data might offer tunable consistency (e.g., Kafka <code>acks</code>).[75]</p>
+                <h4>Table: Consistency Models Comparison</h4>
+                <table>
+                    <thead><tr><th>Model</th><th>Description</th><th>Guarantees</th><th>Performance Impact</th><th>Typical Use in Queues</th></tr></thead>
+                    <tbody>
+                        <tr><td>Strong (Linearizable)</td><td>All reads see latest committed write.[71, 72]</td><td>All nodes agree; real-time order.</td><td>Higher Latency / Lower Availability</td><td>Metadata, critical config, transactions.</td></tr>
+                        <tr><td>Sequential</td><td>All ops seen in same sequence, not real-time.[72]</td><td>Global order, not real-time.</td><td>Moderate Latency / Availability</td><td>Ordered streams (less common as primary).</td></tr>
+                        <tr><td>Causal</td><td>Causally related ops seen in order.[71, 72]</td><td>Preserves cause-effect.</td><td>Moderate Latency / Availability</td><td>Messaging apps (replies after originals).</td></tr>
+                        <tr><td>Eventual</td><td>Replicas eventually converge.[71, 72]</td><td>High availability; eventual match.</td><td>Lower Latency / Higher Availability</td><td>Message data replication, non-critical state.</td></tr>
+                        <tr><td><em>+ Session Guarantees</em></td><td><em>Eventual, but client sees own writes, etc.</em>[72]</td><td><em>Improves user experience.</em></td><td><em>Similar to Eventual.</em></td><td><em>Improving client consistency perception.</em></td></tr>
+                    </tbody>
+                </table>`
+        },
+        routing: {
+            title: "D. Message Routing Mechanisms",
+            content: `
+                <p>Defines path from producer to consumer(s)/queue(s).[6]</p>
+                <h4>Common Routing Mechanisms:</h4>
+                <ul>
+                    <li><strong>Topic-Based Routing (Pub/Sub):</strong> Producers publish to topics. Broker delivers to all topic subscribers (e.g., Kafka, Pulsar).[6, 24, 28, 50, 22]</li>
+                    <li><strong>Direct Routing (Point-to-Point):</strong> Messages to specific queue, one consumer processes (RabbitMQ default exchange).[6, 28, 80]</li>
+                    <li><strong>Content-Based Routing:</strong> Decision based on message content/attributes, not predefined topic/queue.[6, 24]</li>
+                    <li><strong>Exchange-Based Routing (RabbitMQ):</strong> Producers publish to exchange, which routes to bound queues based on type & rules (direct, fanout, topic, headers exchanges).[14, 18, 19, 80, 85]</li>
+                </ul>
+                <p>Choice impacts flexibility and decoupling. RabbitMQ exchanges offer versatility but complexity.[14, 80] Simpler topic-routing (Kafka [76]) may need consumer-side filtering.</p>`
+        },
+        ack: {
+            title: "E. Message Acknowledgement Mechanisms",
+            content: `
+                <p>Signals confirming receipt/processing, key for reliable delivery and fault tolerance.[10, 12, 16, 17, 19, 28, 36, 39, 75, 86, 87, 100-102]</p>
+                <h4>Types and Stages:</h4>
+                <ul>
+                    <li><strong>Producer-Broker Acks:</strong> Producer waits for broker ack (message received/persisted). Kafka <code>acks</code> setting (0, 1, all).[75]</li>
+                    <li><strong>Broker-Consumer Acks:</strong> Consumer acks broker after successful processing. Broker then marks message processed (delete/advance offset).[16, 17, 39]
+                        <ul>
+                            <li>Individual Ack: Each message separate.[17]</li>
+                            <li>Cumulative Ack: Acking one implies ack for prior ones.[17]</li>
+                            <li>Negative Ack (Nack): Consumer signals processing failure, broker redelivers (Pulsar supports Nack with backoff).[17]</li>
+                        </ul>
+                    </li>
+                    <li><strong>Visibility Timeouts (SQS, RabbitMQ):</strong> Message hidden on receipt. If no ack in timeout, becomes visible again for another consumer.[2, 16, 27, 42]</li>
+                </ul>
+                <p>At-least-once relies on consumer ack after processing; redelivery on failure needs idempotent consumers.[20, 36] Producer acks ensure broker storage.[75]</p>
+                <h4>Table: Comparison of Acknowledgment Mechanisms</h4>
+                <table>
+                    <thead><tr><th>System</th><th>Producer-Broker Ack</th><th>Broker-Consumer Ack</th><th>Negative Ack</th><th>Visibility Timeout</th><th>Delivery Guarantee Impact</th></tr></thead>
+                    <tbody>
+                        <tr><td>Apache Kafka</td><td>Configurable (<code>acks=0,1,all</code>) [75]</td><td>Offset commits (manual/auto) [33]</td><td>No (implicit via no offset commit)</td><td>N/A (offset based)</td><td>At-least-once (default); Exactly-once (with idempotent producer & transactions) [41]</td></tr>
+                        <tr><td>RabbitMQ</td><td>Publisher Confirms (opt) [39]</td><td>Manual/Auto Acks (AMQP) [39,101]</td><td>Yes (basic.nack)</td><td>Yes (consumer timeout)</td><td>At-most-once (auto-ack pre-proc); At-least-once (manual ack post-proc)</td></tr>
+                        <tr><td>Apache Pulsar</td><td>Broker acks receipt</td><td>Individual, Cumulative Acks [17]</td><td>Yes (Nack) [17]</td><td>Yes (Ack Timeout) [17]</td><td>At-least-once; Exactly-once (with idempotent producer & transactions) [40]</td></tr>
+                        <tr><td>Amazon SQS</td><td>Broker acks receipt</td><td>Explicit <code>DeleteMessage</code> [26,27]</td><td>No (rely on timeout)</td><td>Yes [27]</td><td>Standard: At-least-once. FIFO: Exactly-once (with dedupe ID) [26,27]</td></tr>
+                    </tbody>
+                </table>`
+        },
+        integrity: {
+            title: "F. Message Integrity",
+            content: `
+                <p>Ensures message data not altered/corrupted in transit or at rest.[103-106]</p>
+                <h4>Techniques:</h4>
+                <ul>
+                    <li><strong>Checksums (e.g., CRC32):</strong> Producer computes, includes in metadata. Consumer recomputes and compares to detect corruption.[106]</li>
+                    <li><strong>Cryptographic Hashes (e.g., SHA-256):</strong> Stronger integrity, detects malicious tampering. Producer hashes payload, consumer verifies.[103, 105, 106]</li>
+                    <li><strong>Digital Signatures:</strong> For integrity and authenticity. Producer signs with private key, consumer verifies with public key.</li>
+                    <li><strong>Validation at Each Step:</strong> Validating checksums/hashes at each hop helps pinpoint corruption.[105]</li>
+                </ul>
+                <p>TLS protects data in transit, but not corruption within components (disk errors, bugs). End-to-end checks (producer to consumer) provide robust verification.[103-106] Message format should support embedded checksums/hashes. Cost vs. assurance trade-off.[105]</p>`
+        }
+    };
+
+    const reliabilityData = {
+        'fault-tolerance': {
+            title: "A. Fault Tolerance Mechanisms",
+            content: `
+                <p>Ability to continue operating correctly despite component failures.[107]</p>
+                <h4>1. Broker Failure Handling and Recovery</h4>
+                <ul>
+                    <li><strong>Replication:</strong> Message data and broker state replicated.[1, 9]</li>
+                    <li><strong>Leader Election:</strong> If leader broker fails, new leader elected from up-to-date followers (e.g., Kafka ISR [81, 82]). Managed by coordination service (ZooKeeper/KRaft).[29, 30, 52, 79, 81, 88-91]</li>
+                    <li><strong>Automated Failover:</strong> Detection, leader election, state recovery automated to minimize downtime.[1, 108]</li>
+                    <li><strong>Heartbeats:</strong> Brokers monitor each other's health.[107]</li>
+                </ul>
+                <p>Speed of detection (MTTD) and recovery (MTTR) are critical. Stateful vs. stateless broker design impacts recovery complexity.[35, 81, 82, 88]</p>
+
+                <h4>2. Network Partition Handling (Split-brain)</h4>
+                <p>Network failure splits cluster; can lead to "split-brain" if subgroups operate independently.[31]</p>
+                <ul>
+                    <li><strong>Quorum-Based Systems:</strong> Operations need majority agreement (ZooKeeper, KRaft [29, 30, 88]), preventing split-brain as only one partition can form quorum.</li>
+                    <li><strong>Partition Handling Strategies:</strong>
+                        <ul>
+                            <li>Pessimistic (Majority Rules): Majority operates, minority pauses/read-only (RabbitMQ <code>pause_minority</code>).[31]</li>
+                            <li>Optimistic (Merge on Recovery): Partitions operate, merge on heal (complex, risks conflicts, Hazelcast merge policies).[32]</li>
+                            <li>Automated Healing: RabbitMQ <code>autoheal</code> attempts automatic resolution.[31]</li>
+                        </ul>
+                    </li>
+                    <li><strong>Detection:</strong> Nodes detect via lost connectivity timeouts.[31]</li>
+                </ul>
+                <p>CAP theorem application: often sacrifice minority availability for consistency. Quorum-based consensus (Raft, Paxos) is key.[31, 88]</p>
+
+                <h4>3. Leader Election</h4>
+                <p>Process to choose new leader when current one fails.[28, 29, 52, 53, 70, 78, 81, 82]</p>
+                <ul>
+                    <li><strong>Triggers:</strong> Missed heartbeats, session timeouts.</li>
+                    <li><strong>Eligibility:</strong> Only up-to-date replicas (e.g., Kafka ISR [81, 82]) to prevent data loss.</li>
+                    <li><strong>Mechanism:</strong> Consensus algorithms (Paxos, Raft). Kafka controller (elected via ZooKeeper/KRaft) orchestrates partition leader elections.[28, 45, 71-74, 81, 82, 88, 90, 91]</li>
+                    <li><strong>Speed and Correctness:</strong> Must be fast and correct.</li>
+                </ul>
+                <p>Correctness is paramount: single leader, most current data. Coordination service health is vital.[81, 82, 90]</p>
+                <h4>Table: Fault Tolerance Strategies and Recovery Mechanisms</h4>
+                <table>
+                    <thead><tr><th>Failure Scenario</th><th>Detection</th><th>Recovery Strategy</th><th>Key Components</th><th>Consistency/Availability Trade-off</th></tr></thead>
+                    <tbody>
+                        <tr><td>Broker Crash (Leader)</td><td>Missed heartbeats, session timeout</td><td>Leader election from ISR.[82] Client redirection.</td><td>Brokers, Coord. Service, Clients</td><td>Consistency if only ISR leader; less avail. if no ISR.</td></tr>
+                        <tr><td>Broker Crash (Follower)</td><td>Leader detects lag</td><td>Leader removes from ISR; new replica added.</td><td>Leader, Follower, Coord. Service</td><td>Minimal impact if enough ISRs.</td></tr>
+                        <tr><td>Network Partition</td><td>Loss of connectivity</td><td>Quorum-based (majority wins), minority pauses.[31]</td><td>Brokers, Coord. Service</td><td>Favors consistency, sacrifices minority avail.</td></tr>
+                        <tr><td>Consumer Crash</td><td>Broker detects lost connection/ack timeout</td><td>Message redelivery, rebalance in group.</td><td>Broker, Consumer, Coord. Service</td><td>At-least-once (potential duplicates).</td></tr>
+                        <tr><td>Coord. Service Node Crash</td><td>Cluster health checks, loss of quorum</td><td>Failover to quorum nodes; service may be unavailable if quorum lost.</td><td>Coord. Service Nodes</td><td>Coord. service must be HA.</td></tr>
+                    </tbody>
+                </table>`
+        },
+        dlq: {
+            title: "B. Dead Letter Queues (DLQs)",
+            content: `
+                <p>Specialized queue for messages that can't be processed after retries or due to unrecoverable errors.[2, 5, 6, 9, 20, 27, 44, 109, 110]</p>
+                <h4>Purpose:</h4>
+                <ul>
+                    <li><strong>Error Isolation:</strong> Prevents "poison pill" messages from blocking main queue.[109, 110]</li>
+                    <li><strong>Debugging/Analysis:</strong> Central location to inspect failed messages, understand causes.[5, 109, 110]</li>
+                    <li><strong>Data Recovery:</strong> Messages can be repaired/reprocessed after issue resolution.[5, 109]</li>
+                </ul>
+                <h4>Architecture:</h4>
+                <ul>
+                    <li>Separate queue/topic for failed messages from primary queue (e.g., Kafka DLQ topic [110]).</li>
+                    <li>Logic (consumer or broker) routes messages to DLQ based on rules (max retries, error types).[5, 110]</li>
+                    <li>DLQ needs own monitoring/alerting.[5, 9, 109]</li>
+                    <li>Include original message metadata (queue, timestamp, error details) in DLQ message.[5]</li>
+                </ul>
+                <h4>Reprocessing/Review:</h4>
+                <ul>
+                    <li>Manual review, automated retry with delay, repair & resubmit, discard.</li>
+                </ul>
+                <p>DLQs are critical for observability and recovery. Impact on FIFO ordering for FIFO queues needs careful handling if a message is moved to DLQ.[44]</p>
+                <h4>Table: DLQ Design and Reprocessing Strategies</h4>
+                <table>
+                    <thead><tr><th>Aspect</th><th>Best Practices/Considerations</th></tr></thead>
+                    <tbody>
+                        <tr><td>Trigger for DLQ Routing</td><td>Configurable max retries; specific error types.[5, 110]</td></tr>
+                        <tr><td>Information to Store</td><td>Original message, failure reason, retry count, original queue, timestamps, diagnostics.[5]</td></tr>
+                        <tr><td>DLQ Structure</td><td>Separate DLQ per primary, or centralized with routing keys. Per-group DLQs for FIFO.[110]</td></tr>
+                        <tr><td>Reprocessing Options</td><td>Manual inspection, automated retry, repair-and-resubmit, discard.[5, 109]</td></tr>
+                        <tr><td>Monitoring & Alerting</td><td>Monitor DLQ depth, age, ingress rate. Alert on thresholds.[5, 9, 109]</td></tr>
+                        <tr><td>Retention Policy in DLQ</td><td>Define how long messages kept to prevent indefinite growth.[5]</td></tr>
+                        <tr><td>Security of DLQ</td><td>Access control for DLQ; messages may contain sensitive data.</td></tr>
+                    </tbody>
+                </table>`
+        },
+        retry: {
+            title: "C. Retry Mechanisms and Backoff Strategies",
+            content: `
+                <p>Retrying failed operations (especially transient ones) improves success rates.[2, 107]</p>
+                <h4>Retry Policies: [2, 5, 36]</h4>
+                <ul>
+                    <li><strong>Maximum Retry Attempts:</strong> Limit retries to prevent indefinite loops.</li>
+                    <li><strong>Retryable Errors:</strong> Differentiate transient (retryable) vs. permanent errors (to DLQ).</li>
+                </ul>
+                <h4>Backoff Strategies:</h4>
+                <ul>
+                    <li><strong>Exponential Backoff:</strong> Delay between retries increases exponentially (1s, 2s, 4s).[5]</li>
+                    <li><strong>Jitter:</strong> Add randomness to backoff delay to prevent "thundering herd".[5]</li>
+                    <li><strong>Maximum Backoff Interval:</strong> Cap max delay.</li>
+                </ul>
+                <p><strong>Integration with Circuit Breakers:</strong> For persistent failures, temporarily stop calls to failing service, allow recovery.[5, 20, 107, 108]</p>
+                <p>Some systems offer built-in delayed redelivery (Pulsar redelivery backoff [17]). Intelligent, configurable retries with backoff and jitter are crucial.[5]</p>`
+        },
+        idempotency: {
+            title: "D. Idempotency for At-Least-Once/Exactly-Once Delivery",
+            content: `
+                <p>Ensuring an operation performed multiple times has same effect as once. Critical for at-least-once delivery where duplicates are possible.[5, 36]</p>
+                <h4>Why Needed:</h4>
+                <p>Non-idempotent processing of duplicates can lead to incorrect outcomes (duplicate DB entries, multiple charges).[20]</p>
+                <h4>Strategies:</h4>
+                <ul>
+                    <li><strong>Unique Message Identifiers:</strong> Assign unique ID to messages. Consumers track processed IDs, ignore duplicates.[5]</li>
+                    <li><strong>Idempotency Keys:</strong> Producers include unique key. Server detects/rejects duplicate requests.[108]</li>
+                    <li><strong>Processing History/Deduplication Logic:</strong> Consumers maintain record of processed message IDs.[5]</li>
+                    <li><strong>Naturally Idempotent Operations:</strong> Design logic to be inherently idempotent (e.g., <code>CREATE IF NOT EXISTS</code>).</li>
+                    <li><strong>Transactional Processing:</strong> Transactions for message processing and state updates. Kafka/Pulsar use idempotent producers and transactional APIs for stronger exactly-once.[40, 41]</li>
+                </ul>
+                <p>Shared responsibility: system provides features (idempotent producers [40, 41]), consumer logic often needs to be idempotent (track processed IDs [5]).</p>`
+        },
+        backpressure: {
+            title: "E. Backpressure Management",
+            content: `
+                <p>Mechanism for overloaded system to signal upstream components to slow down, preventing cascading failures.[3, 111, 112]</p>
+                <h4>Need:</h4>
+                <p>If producers > consumers or brokers, queues grow unboundedly, exhausting resources.[112]</p>
+                <h4>Mechanisms: [111]</h4>
+                <ul>
+                    <li><strong>Flow Control:</strong> Regulating data transmission rate.</li>
+                    <li><strong>Feedback Loops:</strong> Downstream signals upstream to slow/pause.</li>
+                    <li><strong>Buffer Management:</strong> Buffers absorb spikes; thresholds trigger backpressure.</li>
+                    <li><strong>Rate Limiting:</strong> Restrict requests/messages per time unit.</li>
+                    <li><strong>Queue Depth Limits:</strong> Brokers reject/slow producers if queue depth exceeds threshold.</li>
+                </ul>
+                <p>System-wide concern. Coordinated signaling (consumer -> broker -> producer) allows graceful throttling. Active backpressure (signals, rate limiting [3, 111]) needed beyond passive buffering [4] to prevent resource exhaustion.[112] Kafka can slow producers if consumers lag.[111]</p>`
+        }
+    };
+
+    const opsData = {
+        monitoring: {
+            title: "A. Monitoring and Observability (Key Metrics)",
+            content: `
+                <p>Essential for understanding behavior, diagnosing issues, capacity planning, and meeting SLAs.[2, 3, 5]</p>
+                <h4>Key Metric Categories:</h4>
+                <ul>
+                    <li><strong>System-Level:</strong>
+                        <ul>
+                            <li>Queue Depth/Growth Rate: Indicates bottlenecks.[2, 5]</li>
+                            <li>Processing Throughput (produce/consume rate).[5]</li>
+                            <li>Error Rates/Patterns (ack failures, DLQ messages).[5]</li>
+                            <li>Consumer Health (active consumers, lag, rebalancing).[5]</li>
+                            <li>Resource Utilization (CPU, memory, disk, network on brokers).[5]</li>
+                        </ul>
+                    </li>
+                    <li><strong>Business-Level / End-to-End:</strong>
+                        <ul>
+                            <li>Processing Latency (enqueue to ack).[5]</li>
+                            <li>Message Age Distribution.[5]</li>
+                            <li>Priority Level Statistics (if applicable).[5]</li>
+                            <li>SLA Compliance.</li>
+                        </ul>
+                    </li>
+                </ul>
+                <p><strong>DLQ Monitoring:</strong> Crucial for identifying persistent issues.[5, 9, 109]</p>
+                <p><strong>Alerting:</strong> Based on thresholds for key metrics for proactive intervention.</p>
+                <p>Monitoring should include leading (predictive) and lagging (existing problems) indicators. Correlating metrics across components is vital for root cause analysis.[2, 5]</p>
+                <div class="chart-container mt-8">
+                    <canvas id="queueDepthChart"></canvas>
+                </div>
+                <p class="text-sm text-center text-slate-500">Illustrative Bar Chart: Example Queue Depth Over Time. Spikes might indicate consumer issues or producer bursts.</p>
+                <h4>Table: Key Monitoring Metrics for Distributed Queues</h4>
+                <table>
+                    <thead><tr><th>Category</th><th>Metric</th><th>Description</th><th>Importance</th><th>Example Thresholds</th></tr></thead>
+                    <tbody>
+                        <tr><td>Broker/Queue</td><td>Queue Depth [5]</td><td>Messages waiting</td><td>Consumer lag/producer burst</td><td>Stable; Alert if > X</td></tr>
+                        <tr><td>Broker/Queue</td><td>Message Age [5]</td><td>Age of messages</td><td>Stale messages</td><td>Avg < Y sec; Oldest > Z min</td></tr>
+                        <tr><td>Broker/Queue</td><td>Broker Resources [5]</td><td>CPU, Mem, Disk IO</td><td>Broker health</td><td>CPU < 70%; Mem < 80%</td></tr>
+                        <tr><td>Broker/Queue</td><td>DLQ Size [9]</td><td>Messages in DLQ</td><td>Persistent failures</td><td>Near zero; Alert if increasing</td></tr>
+                        <tr><td>Producer</td><td>Publish Rate</td><td>Messages sent</td><td>Load tracking</td><td>Matches expected</td></tr>
+                        <tr><td>Producer</td><td>Publish Error Rate</td><td>Failed sends</td><td>Connectivity/broker issues</td><td>Near zero; Alert if > X%</td></tr>
+                        <tr><td>Producer</td><td>Publish Latency</td><td>Producer ack time</td><td>Producer app performance</td><td>< X ms (99th %ile)</td></tr>
+                        <tr><td>Consumer</td><td>Consumption Rate</td><td>Messages processed</td><td>Matches publish rate</td><td>Matches publish; Alert if lagging</td></tr>
+                        <tr><td>Consumer</td><td>Consumer Lag [33]</td><td>Msgs/time behind latest</td><td>Consumer speed vs production</td><td>< X msgs/Y sec; Alert if increasing</td></tr>
+                        <tr><td>Consumer</td><td>Processing Latency</td><td>Consumer processing time</td><td>Consumer app performance</td><td>< X ms (99th %ile)</td></tr>
+                        <tr><td>Consumer</td><td>Consumer Error Rate</td><td>Consumer processing failures</td><td>Consumer logic/downstream issues</td><td>Near zero; Alert if > X%</td></tr>
+                        <tr><td>Consumer</td><td>Consumer Group Rebalances [34]</td><td>Frequency/duration</td><td>Disruption, instability</td><td>Infrequent; Duration < X sec</td></tr>
+                        <tr><td>End-to-End</td><td>End-to-End Latency [5]</td><td>Total time produce to consume</td><td>Overall system performance; SLA</td><td>< X sec (99th %ile)</td></tr>
+                    </tbody>
+                </table>`
+        },
+        scalability: {
+            title: "B. Scalability Patterns (Adding/Removing Brokers/Consumers)",
+            content: `
+                <p>System must scale capacity/performance with workload changes.</p>
+                <ul>
+                    <li><strong>Horizontal Scaling of Consumers:</strong> Add consumer instances to group for parallel processing (often automated by queue depth/lag).[2, 5]</li>
+                    <li><strong>Horizontal Scaling of Brokers:</strong> Add broker nodes to cluster for capacity, storage, fault tolerance (involves data rebalancing/partition reassignment).[1, 4, 7, 8]</li>
+                    <li><strong>Partition Scaling:</strong> Increase topic/queue partitions for more parallelism (producer writes, consumer processing). Too many can have drawbacks (metadata overhead, recovery time).[6]</li>
+                    <li><strong>Elasticity:</strong> Support scaling out and in (removing instances) to optimize costs.</li>
+                    <li><strong>Rebalancing Efficiency:</strong> Reassigning partitions/load during scaling should be efficient, minimize disruption (e.g., Kafka incremental cooperative rebalancing [33]).[33, 34]</li>
+                </ul>
+                <p>Elastic scalability is key for operational efficiency. Dynamic scaling of stateful brokers triggers rebalancing (data migration, metadata updates), which can be resource-intensive. Graceful add/remove of brokers/consumers and optimized rebalancing are crucial.[33, 34]</p>`
+        },
+        loadbalancing: {
+            title: "C. Load Balancing Techniques (for Brokers and Consumers)",
+            content: `
+                <p>Distribute workload evenly to prevent bottlenecks and maximize throughput.[1, 3, 4, 6]</p>
+                <h4>Producer-to-Broker Load Balancing:</h4>
+                <ul>
+                    <li><strong>Client-Side:</strong> Producers aware of cluster topology distribute messages (round-robin, key-based hashing, custom partitioners).[50, 77]</li>
+                    <li><strong>External Load Balancer (NLB):</strong> Producers connect to NLB before brokers. NLB distributes connections (Round Robin, Least Connections, IP Hash). Sticky sessions might be needed for affinity (less common with good partitioning).[1, 113, 114]</li>
+                </ul>
+                <h4>Broker-Internal Load Balancing:</h4>
+                <p>Brokers distribute partitions/queue segments across cluster to balance storage, I/O, CPU. Managed by coordination service/controller.</p>
+                <h4>Broker-to-Consumer Load Balancing (Consumer Groups):</h4>
+                <p>In systems like Kafka, partitions distributed among consumer instances in a group. Each partition typically assigned to one consumer. Advanced strategies (work-stealing, capacity-aware) for varied processing times/capacities.[5, 33, 34]</p>
+                <p>Multi-layered concern: producers distribute writes, brokers balance partitions, consumer groups balance consumption. Goal: even resource utilization, no single bottleneck.</p>`
+        }
+    };
+
+
+    function switchContent(targetId) {
+        contentSections.forEach(section => {
+            section.classList.remove('active');
+        });
+        const targetSection = document.getElementById(targetId);
+        if (targetSection) {
+            targetSection.classList.add('active');
+            targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        navLinks.forEach(link => {
+            link.classList.remove('active');
+            if (link.getAttribute('data-target') === targetId) {
+                link.classList.add('active');
+            }
+        });
+    }
+
+    navLinks.forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const targetId = link.getAttribute('data-target');
+            switchContent(targetId);
+        });
+    });
+
+    function setupTabbedContent(tabContainerSelector, contentAreaSelector, dataObject, defaultTab) {
+        const tabButtons = document.querySelectorAll(`${tabContainerSelector} .tab-button`);
+        const contentArea = document.getElementById(contentAreaSelector);
+
+        function switchTabContent(targetId) {
+            if (!dataObject[targetId] || !contentArea) return;
+
+            contentArea.innerHTML = `<h3>${dataObject[targetId].title}</h3>${dataObject[targetId].content}`;
+            tabButtons.forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.getAttribute('data-target') === targetId) {
+                    btn.classList.add('active');
+                }
+            });
+        }
+
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const targetId = button.getAttribute('data-target');
+                switchTabContent(targetId);
+            });
+        });
+        if (defaultTab && dataObject[defaultTab]) {
+           switchTabContent(defaultTab);
+        } else if (tabButtons.length > 0) {
+            switchTabContent(tabButtons[0].getAttribute('data-target'));
+        }
+    }
+    
+    document.addEventListener('DOMContentLoaded', () => {
+        const nfrTabButtons = document.querySelectorAll('.nfr-tabs .tab-button');
+        const nfrContentArea = document.getElementById('nfr-content-area');
+
+        function switchNFRTabContent(targetId) {
+            if (!nfrData[targetId] || !nfrContentArea) return;
+            nfrContentArea.innerHTML = `<h3>${nfrData[targetId].title}</h3>${nfrData[targetId].content}`;
+            nfrTabButtons.forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.getAttribute('data-target') === `nfr-${targetId}`) { 
+                    btn.classList.add('active');
+                }
+            });
+        }
+        
+        nfrTabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const targetId = button.getAttribute('data-target').replace('nfr-', '');
+                switchNFRTabContent(targetId);
+            });
+        });
+        
+        if (nfrTabButtons.length > 0) {
+            const defaultNFRTarget = nfrTabButtons[0].getAttribute('data-target').replace('nfr-', '');
+            switchNFRTabContent(defaultNFRTarget);
+            nfrTabButtons[0].classList.add('active');
+        }
+
+        setupTabbedContent('.component-tabs', 'component-content-area', componentData, 'producers');
+        setupTabbedContent('.data-mgmnt-tabs', 'data-mgmnt-content-area', dataMgmntData, 'partitioning');
+        setupTabbedContent('.reliability-tabs', 'reliability-content-area', reliabilityData, 'fault-tolerance');
+        setupTabbedContent('.ops-tabs', 'ops-content-area', opsData, 'monitoring');
+        
+        renderNFRRadarChart();
+        renderQueueDepthChart();
+
+        if (navLinks.length > 0) {
+            navLinks[0].classList.add('active');
+            const firstSectionId = navLinks[0].getAttribute('data-target');
+            const firstSection = document.getElementById(firstSectionId);
+            if (firstSection) {
+                firstSection.classList.add('active');
+            }
+        }
+
+        const frTabButtons = document.querySelectorAll('.functional-reqs-tabs .tab-button');
+        const frSubSections = document.querySelectorAll('#requirements .sub-content-section');
+
+        frTabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const targetId = button.getAttribute('data-target');
+                frSubSections.forEach(section => {
+                    section.classList.remove('active');
+                    if (section.id === targetId) {
+                        section.classList.add('active');
+                    }
+                });
+                frTabButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+            });
+        });
+
+        if (frTabButtons.length > 0 && frSubSections.length > 0) {
+            frTabButtons[0].classList.add('active');
+            const firstFrSubSection = document.getElementById(frTabButtons[0].getAttribute('data-target'));
+            if (firstFrSubSection) {
+                 firstFrSubSection.classList.add('active');
+            }
+        }
+    });
+
+
+    function renderNFRRadarChart() {
+        const ctx = document.getElementById('nfrRadarChart')?.getContext('2d');
+        if (!ctx) return;
+
+        if (currentNFRChart) {
+            currentNFRChart.destroy();
+        }
+        currentNFRChart = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: ['Scalability', 'Availability', 'Durability', 'Delivery Guarantees', 'Ordering', 'Latency', 'Throughput', 'Security', 'Consistency'],
+                datasets: [{
+                    label: 'Importance/Complexity Factor (Illustrative)',
+                    data: [9, 10, 8, 9, 7, 8, 9, 10, 9], 
+                    fill: true,
+                    backgroundColor: 'rgba(56, 189, 248, 0.2)', 
+                    borderColor: '#0ea5e9', 
+                    pointBackgroundColor: '#0ea5e9', 
+                    pointBorderColor: '#fff',
+                    pointHoverBackgroundColor: '#fff',
+                    pointHoverBorderColor: '#0ea5e9' 
+                }]
+            },
+            options: {
+                maintainAspectRatio: false,
+                responsive: true,
+                scales: {
+                    r: {
+                        angleLines: { display: true, color: '#cbd5e1' },
+                        grid: { color: '#e2e8f0' },
+                        pointLabels: { font: { size: 10 }, color: '#475569' },
+                        suggestedMin: 0,
+                        suggestedMax: 10,
+                        ticks: {
+                           backdropColor: 'rgba(255, 255, 255, 0.75)', 
+                           color: '#475569', 
+                           stepSize: 2
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: { color: '#334155' }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.r !== null) {
+                                    label += context.parsed.r;
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                },
+                elements: {
+                    line: {
+                        borderWidth: 2
+                    }
+                }
+            }
+        });
+    }
+
+    function renderQueueDepthChart() {
+        const ctx = document.getElementById('queueDepthChart')?.getContext('2d');
+        if (!ctx) return;
+
+        if (currentQueueDepthChart) {
+            currentQueueDepthChart.destroy();
+        }
+        const labels = ['00:00', '01:00', '02:00', '03:00', '04:00', '05:00', '06:00'];
+        currentQueueDepthChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Queue Depth (Illustrative)',
+                    data: [120, 150, 800, 250, 300, 180, 220], 
+                    backgroundColor: 'rgba(56, 189, 248, 0.6)', 
+                    borderColor: '#0ea5e9', 
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                maintainAspectRatio: false,
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#e2e8f0' },
+                        ticks: { color: '#475569' }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { color: '#475569' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        labels: { color: '#334155' }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                let label = context.dataset.label || '';
+                                if (label) {
+                                    label += ': ';
+                                }
+                                if (context.parsed.y !== null) {
+                                    label += context.parsed.y + ' messages';
+                                }
+                                return label;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+</script>
+</body>
+</html>

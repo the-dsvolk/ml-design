@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive DynamoDB Keying Strategies Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Visualization & Content Choices:
+        - Report Info: Introduction -> Goal: Set context -> Viz/Method: Text -> Interaction: Static -> Justification: Standard introduction.
+        - Report Info: Primary Key types (Simple, Composite) -> Goal: Explain structure & use -> Viz/Method: Text, HTML/CSS diagrams for partitioning/sorting concepts -> Interaction: Click to expand details, view diagrams -> Justification: Visual aid for abstract concepts.
+        - Report Info: Secondary Index Fundamentals (Table 1) -> Goal: Compare LSI vs. GSI -> Viz/Method: HTML table -> Interaction: Static, clear presentation -> Justification: Direct data comparison.
+        - Report Info: LSI details -> Goal: Explain LSI -> Viz/Method: Text, HTML/CSS conceptual diagram -> Interaction: Collapsible sections -> Justification: Focused explanation.
+        - Report Info: GSI details -> Goal: Explain GSI -> Viz/Method: Text, HTML/CSS conceptual diagram -> Interaction: Collapsible sections -> Justification: Focused explanation.
+        - Report Info: Attribute Projections (Table 2) -> Goal: Explain options & trade-offs -> Viz/Method: HTML table -> Interaction: Static, clear presentation -> Justification: Direct data presentation.
+        - Report Info: Advanced Patterns (Sparse, Overloading, Adjacency, Materialized Aggregations) -> Goal: Illustrate concepts -> Viz/Method: Text descriptions + HTML/CSS diagrams for each -> Interaction: Collapsible sections, view diagrams -> Justification: Simplify complex patterns visually.
+        - Report Info: Best Practices (Partition Keys, Sort Keys, Index Usage) -> Goal: Provide actionable advice -> Viz/Method: Bulleted lists, text -> Interaction: Static -> Justification: Clear, concise recommendations.
+        - Report Info: Key Limitations (Table 3) -> Goal: Inform constraints -> Viz/Method: HTML table -> Interaction: Static -> Justification: Clear reference.
+        - Report Info: Conclusion -> Goal: Summarize -> Viz/Method: Text -> Interaction: Static -> Justification: Standard conclusion.
+        - CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. All visuals are HTML/CSS based. No Chart.js or Plotly.js as data is primarily conceptual/tabular.
+    -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* For Inter font */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+        .content-section {
+            display: none;
+        }
+        .content-section.active {
+            display: block;
+        }
+        .nav-link {
+            cursor: pointer;
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+        }
+        .nav-link:hover {
+            background-color: #e0f2fe; /* sky-100 */
+            color: #0c4a6e; /* sky-800 */
+        }
+        .nav-link.active {
+            background-color: #0ea5e9; /* sky-500 */
+            color: white;
+            font-weight: 600;
+        }
+        .nav-group > .nav-link {
+            font-weight: 600;
+        }
+        .nav-sub-link {
+            padding-left: 2rem; /* Indent sub-links */
+        }
+        .table-container table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .table-container th, .table-container td {
+            border: 1px solid #cbd5e1; /* slate-300 */
+            padding: 0.75rem;
+            text-align: left;
+            font-size: 0.875rem; /* text-sm */
+        }
+        .table-container th {
+            background-color: #f1f5f9; /* slate-100 */
+            font-weight: 600;
+        }
+        .table-container td code {
+            background-color: #e2e8f0; /* slate-200 */
+            padding: 0.125rem 0.25rem;
+            border-radius: 0.25rem;
+            font-size: 0.8em;
+        }
+        .diagram-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px; /* Example max-width */
+            margin-left: auto;
+            margin-right: auto;
+            min-height: 200px; /* Example height */
+            max-height: 400px;
+            border: 1px solid #cbd5e1; /* slate-300 */
+            background-color: #f8fafc; /* slate-50 */
+            padding: 1rem;
+            border-radius: 0.5rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: auto;
+        }
+        .diagram-box {
+            border: 2px solid #0ea5e9; /* sky-500 */
+            background-color: white;
+            padding: 0.5rem 1rem;
+            margin: 0.5rem;
+            border-radius: 0.375rem;
+            text-align: center;
+            font-size: 0.875rem;
+        }
+        .diagram-arrow {
+            font-size: 1.5rem;
+            color: #0ea5e9; /* sky-500 */
+            margin: 0 0.5rem;
+        }
+        .collapsible-content {
+            display: none;
+            margin-top: 0.5rem;
+            padding-left: 1rem;
+            border-left: 2px solid #93c5fd; /* blue-300 */
+        }
+        .collapsible-trigger {
+            cursor: pointer;
+            color: #0284c7; /* sky-600 */
+            font-weight: 500;
+        }
+        .collapsible-trigger::before {
+            content: '▶ ';
+            font-size: 0.8em;
+            transition: transform 0.2s ease-in-out;
+        }
+        .collapsible-trigger.open::before {
+            transform: rotate(90deg);
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+    <div class="flex flex-col md:flex-row min-h-screen">
+        <aside class="w-full md:w-72 bg-white p-6 shadow-lg md:sticky md:top-0 md:h-screen overflow-y-auto">
+            <h1 class="text-2xl font-bold text-sky-700 mb-6">DynamoDB Keys</h1>
+            <nav id="sidebarNav" class="space-y-1">
+                <div class="nav-group">
+                    <a class="nav-link active" data-target="intro">Introduction</a>
+                </div>
+                <div class="nav-group">
+                    <span class="nav-link" data-target="primary-keys-overview">Primary Keys</span>
+                    <div class="ml-4">
+                        <a class="nav-link nav-sub-link" data-target="simple-pk">Simple Primary Key</a>
+                        <a class="nav-link nav-sub-link" data-target="composite-pk">Composite Primary Key</a>
+                    </div>
+                </div>
+                <div class="nav-group">
+                    <span class="nav-link" data-target="secondary-indexes-overview">Secondary Indexes</span>
+                    <div class="ml-4">
+                        <a class="nav-link nav-sub-link" data-target="secondary-indexes-fundamentals">Fundamentals</a>
+                        <a class="nav-link nav-sub-link" data-target="lsi">Local Secondary Indexes (LSI)</a>
+                        <a class="nav-link nav-sub-link" data-target="gsi">Global Secondary Indexes (GSI)</a>
+                        <a class="nav-link nav-sub-link" data-target="attribute-projections">Attribute Projections</a>
+                    </div>
+                </div>
+                <div class="nav-group">
+                    <span class="nav-link" data-target="advanced-patterns-overview">Advanced Patterns</span>
+                    <div class="ml-4">
+                        <a class="nav-link nav-sub-link" data-target="sparse-indexes">Sparse Indexes</a>
+                        <a class="nav-link nav-sub-link" data-target="gsi-overloading">GSI Overloading</a>
+                        <a class="nav-link nav-sub-link" data-target="adjacency-lists">Adjacency Lists</a>
+                        <a class="nav-link nav-sub-link" data-target="materialized-aggregations">Materialized Aggregations</a>
+                    </div>
+                </div>
+                 <div class="nav-group">
+                    <a class="nav-link" data-target="best-practices">Best Practices</a>
+                </div>
+                <div class="nav-group">
+                    <a class="nav-link" data-target="key-limitations">Key Limitations & Quotas</a>
+                </div>
+                <div class="nav-group">
+                    <a class="nav-link" data-target="conclusion">Conclusion</a>
+                </div>
+            </nav>
+        </aside>
+
+        <main class="flex-1 p-6 md:p-10 overflow-y-auto">
+            <section id="intro" class="content-section active space-y-4">
+                <h2 class="text-3xl font-semibold text-sky-700 border-b border-slate-300 pb-2">An In-Depth Analysis of Keying Strategies in Amazon DynamoDB</h2>
+                <p class="text-slate-700 leading-relaxed">Welcome to the interactive guide on Amazon DynamoDB keying strategies. DynamoDB's performance and scalability are heavily reliant on how you design your keys and indexes. This application will walk you through the fundamental concepts, different types of keys and indexes, advanced design patterns, and best practices. Understanding these elements is crucial for building efficient, scalable, and cost-effective applications with DynamoDB.</p>
+                <p class="text-slate-700 leading-relaxed">Use the navigation on the left to explore various topics. Each section provides detailed explanations, use cases, and design considerations based on the comprehensive analysis report.</p>
+            </section>
+
+            <section id="primary-keys-overview" class="content-section space-y-4">
+                <h2 class="text-3xl font-semibold text-sky-700 border-b border-slate-300 pb-2">Primary Keys: The Foundation</h2>
+                <p class="text-slate-700 leading-relaxed">Primary keys are the cornerstone of data access in DynamoDB, uniquely identifying each item and dictating data partitioning and storage. This section delves into the two types of primary keys: Simple and Composite. Understanding their characteristics and best practices is the first step to effective DynamoDB design.</p>
+            </section>
+
+            <section id="simple-pk" class="content-section space-y-4">
+                <h2 class="text-2xl font-semibold text-sky-600">Simple Primary Key (Partition Key Only)</h2>
+                <p class="text-slate-700 leading-relaxed">A simple primary key consists of a single attribute, the <strong>partition key</strong>. DynamoDB uses this key's value to hash and determine the physical partition where the item is stored, enabling horizontal scalability.</p>
+                
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Characteristics & Use Cases</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>Data Distribution:</strong> The partition key's main role. High cardinality (many distinct values) is crucial to avoid "hot" partitions.</li>
+                        <li><strong>Good Candidates:</strong> Attributes like <code>emailid</code>, <code>employee_no</code>, <code>customerid</code>, <code>sessionid</code>, <code>orderid</code>.</li>
+                        <li><strong>Ideal For:</strong> Direct lookups of individual items (key-value store functionality), e.g., fetching a user profile by <code>UserID</code>.</li>
+                    </ul>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Design Best Practices</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>High Cardinality:</strong> Choose attributes with many distinct values for even data spread.</li>
+                        <li><strong>Uniform Activity:</strong> Design for uniform access across all partition keys to prevent overloading specific partitions (default limits: 3000 RCUs, 1000 WCUs per partition).</li>
+                    </ul>
+                </div>
+                <div class="diagram-container">
+                    <div class="text-sm text-slate-600 mb-2">Conceptual: Partition Key Hashing</div>
+                    <div class="diagram-box">Item with PK: 'user123'</div>
+                    <div class="diagram-arrow">➔</div>
+                    <div class="diagram-box">Hash Function</div>
+                    <div class="diagram-arrow">➔</div>
+                    <div class="flex space-x-2">
+                        <div class="diagram-box bg-green-100 border-green-500">Partition A</div>
+                        <div class="diagram-box">Partition B</div>
+                        <div class="diagram-box">Partition C</div>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-2">'user123' hashes to Partition A.</p>
+                </div>
+                <p class="text-slate-700 leading-relaxed mt-2">The choice of partition key directly determines data placement and is vital for workload distribution and performance. It offers simplicity but limited query patterns (equality lookups on the partition key).</p>
+            </section>
+
+            <section id="composite-pk" class="content-section space-y-4">
+                <h2 class="text-2xl font-semibold text-sky-600">Composite Primary Key (Partition Key + Sort Key)</h2>
+                <p class="text-slate-700 leading-relaxed">A composite primary key uses two attributes: a <strong>partition key</strong> and a <strong>sort key</strong> (or range key). Items with the same partition key are stored together, ordered by the sort key. This combination must uniquely identify each item.</p>
+
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Role of Partition and Sort Key</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>Partition Key:</strong> Groups related items (e.g., all orders for a <code>CustomerID</code>).</li>
+                        <li><strong>Sort Key:</strong> Organizes items within that group, enabling sorted retrieval and range queries (<code>BETWEEN</code>, <code>begins_with</code>, <code>&gt;</code>, <code>&lt;</code>) on the sort key for a given partition key.</li>
+                    </ul>
+                </div>
+                
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Characteristics & Use Cases</h3>
+                     <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>One-to-Many Relationships:</strong> Models scenarios like a <code>CustomerID</code> (PK) having multiple <code>OrderDate#OrderID</code> (SKs), forming an "item collection".</li>
+                        <li><strong>Time-Series Data:</strong> E.g., <code>DeviceID</code> (PK) and <code>timestamp</code> (SK) for querying events in a time window.</li>
+                        <li><strong>Version Control:</strong> E.g., <code>DocumentID</code> (PK) and <code>VersionTimestamp</code> (SK).</li>
+                        <li><strong>Ordered Collections:</strong> Forum threads sorted by post date within a forum.</li>
+                        <li><strong>Hierarchical Relationships:</strong> E.g., <code>PK=Country, SK=State#City</code>.</li>
+                    </ul>
+                </div>
+                 <div class="diagram-container">
+                    <div class="text-sm text-slate-600 mb-2">Conceptual: Composite Key & Item Collection</div>
+                    <div class="diagram-box w-full">Partition: CustomerID = 'custA'</div>
+                    <div class="flex flex-col items-center mt-2 space-y-1">
+                        <div class="diagram-box text-xs">Item 1 (SK: 'Order_2023-01-15_001')</div>
+                        <div class="diagram-box text-xs">Item 2 (SK: 'Order_2023-01-20_002')</div>
+                        <div class="diagram-box text-xs">Item 3 (SK: 'ProfileData')</div>
+                    </div>
+                    <p class="text-xs text-slate-500 mt-2">Items with PK 'custA' are co-located and ordered by Sort Key.</p>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow mt-4">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Design Best Practices</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>Partition Key:</strong> High cardinality and even distribution remain crucial.</li>
+                        <li><strong>Sort Key Attributes:</strong> Align with common range query needs. Consider composite sort keys (e.g., <code>status#date</code>) for complex sorting/filtering.</li>
+                        <li><strong>Data Types:</strong> Affect ordering (String by UTF-8, Number numerically, Binary by unsigned byte).</li>
+                        <li><strong>Uniqueness:</strong> Sort key must be unique within its partition.</li>
+                        <li><strong>Immutability:</strong> Sort key attribute cannot be changed after table creation.</li>
+                        <li><strong>Querying:</strong> Always requires a partition key value; cannot query by sort key alone.</li>
+                    </ul>
+                     <p class="text-slate-700 leading-relaxed mt-2">The sort key defines the "query axis" within an item collection. Poor sort key choice limits range query effectiveness. Composite sort keys (e.g., <code>Status#Date#ItemID</code>) are powerful but add complexity. Be mindful of the 10GB item collection size limit if using Local Secondary Indexes (LSIs), as it applies to the data grouped by the partition key.</p>
+                </div>
+            </section>
+
+            <section id="secondary-indexes-overview" class="content-section space-y-4">
+                <h2 class="text-3xl font-semibold text-sky-700 border-b border-slate-300 pb-2">Secondary Indexes: Expanding Query Horizons</h2>
+                <p class="text-slate-700 leading-relaxed">While primary keys offer efficient access based on their attributes, applications often need to query data using other attributes. Secondary indexes in DynamoDB fulfill this need by enabling queries on non-primary key attributes, providing greater flexibility in data access patterns. This section covers the fundamentals of secondary indexes, including Local Secondary Indexes (LSIs) and Global Secondary Indexes (GSIs), and the critical aspect of attribute projections.</p>
+            </section>
+
+            <section id="secondary-indexes-fundamentals" class="content-section space-y-4">
+                <h2 class="text-2xl font-semibold text-sky-600">Fundamentals of Secondary Indexes</h2>
+                <p class="text-slate-700 leading-relaxed">A secondary index is a data structure containing a subset of attributes from a base table, organized by an alternate key. This allows <code>Query</code> or <code>Scan</code> operations against the index. DynamoDB automatically maintains synchronization between the base table and its indexes.</p>
+                <p class="text-slate-700 leading-relaxed">DynamoDB supports two types: <strong>Local Secondary Indexes (LSIs)</strong> and <strong>Global Secondary Indexes (GSIs)</strong>.</p>
+                
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">General Considerations</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>Limits:</strong> Up to 5 LSIs and 20 GSIs (default, GSI quota adjustable) per table.</li>
+                        <li><strong>Attribute Projections:</strong> Specify which attributes are copied into the index (impacts storage, performance, cost).</li>
+                        <li><strong>Cost:</strong> Indexes consume storage and incur throughput costs. Minimize indexes to essential ones.</li>
+                    </ul>
+                </div>
+
+                <h3 class="text-xl font-semibold text-sky-600 mt-6 mb-3">Table 1: Comparative Overview: Local vs. Global Secondary Indexes</h3>
+                <div class="table-container overflow-x-auto bg-white p-4 rounded-lg shadow">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Feature/Characteristic</th>
+                                <th>Local Secondary Index (LSI)</th>
+                                <th>Global Secondary Index (GSI)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Partition Key</strong></td>
+                                <td>Same as base table</td>
+                                <td>Can be different from base table</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Sort Key</strong></td>
+                                <td>Must be a different scalar attribute from base table</td>
+                                <td>Optional; can be different scalar attribute from base table</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Key Schema</strong></td>
+                                <td>Must be composite (Partition Key + Sort Key)</td>
+                                <td>Can be simple (Partition Key only) or composite</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Provisioned Throughput</strong></td>
+                                <td>Shared with base table</td>
+                                <td>Independent of base table</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Read Consistency</strong></td>
+                                <td>Eventual or Strong</td>
+                                <td>Eventual only</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Creation Time</strong></td>
+                                <td>Only at table creation</td>
+                                <td>Anytime (online operation)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Deletion</strong></td>
+                                <td>Cannot be deleted individually (deleted with table)</td>
+                                <td>Can be deleted anytime</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Item Collection Size Limit (per PK value)</strong></td>
+                                <td>10 GB (for base table items + all LSI items sharing the PK)</td>
+                                <td>No equivalent limit for GSI itself</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Max Count per Table</strong></td>
+                                <td>5</td>
+                                <td>20 (default quota, adjustable)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Query Scope</strong></td>
+                                <td>Scoped to a base table partition (single PK value)</td>
+                                <td>Spans entire table, across all partitions</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Attribute Fetching (Non-Projected)</strong></td>
+                                <td>Can fetch from base table (incurs additional cost/latency)</td>
+                                <td>Cannot fetch from base table; query returns only projected attributes</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="text-slate-700 leading-relaxed mt-4">Secondary indexes are like "managed replicas." GSIs, often called "shadow tables," replicate attributes, explaining their independent costs. The eventual consistency of GSIs allows them to scale independently, while LSIs can offer strong consistency due to shared partitioning with the base table.</p>
+            </section>
+
+            <section id="lsi" class="content-section space-y-4">
+                <h2 class="text-2xl font-semibold text-sky-600">Local Secondary Indexes (LSIs)</h2>
+                <p class="text-slate-700 leading-relaxed">An LSI provides an alternative sort key for items sharing the base table's partition key. The LSI's partition key is identical to the base table's; its sort key must be a different scalar attribute.</p>
+
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Core Characteristics</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>Shared Throughput:</strong> Uses base table's RCUs/WCUs.</li>
+                        <li><strong>10GB Item Collection Limit:</strong> Total size of base table items + LSI items for the same partition key value cannot exceed 10GB. Exceeding this causes <code>ItemCollectionSizeLimitExceededException</code>.</li>
+                        <li><strong>Creation at Table Inception:</strong> Only when the table is created; cannot be added/deleted later.</li>
+                        <li><strong>Strong Consistency Option:</strong> Can support strongly consistent reads.</li>
+                        <li><strong>"Local" Scope:</strong> LSI partitions are scoped to base table partitions with the same partition key.</li>
+                        <li><strong>Limit:</strong> Max 5 LSIs per table.</li>
+                    </ul>
+                </div>
+                <div class="diagram-container">
+                     <div class="text-sm text-slate-600 mb-2">Conceptual: LSI Structure</div>
+                     <div class="diagram-box w-full">Base Table Partition (PK: 'ForumX')</div>
+                     <div class="flex flex-col items-start p-2 space-y-1">
+                        <div class="diagram-box text-xs self-stretch">Item 1 (Base SK: 'ThreadABC', LSI SK: '2023-01-15T10:00:00Z')</div>
+                        <div class="diagram-box text-xs self-stretch">Item 2 (Base SK: 'ThreadXYZ', LSI SK: '2023-01-10T12:30:00Z')</div>
+                     </div>
+                     <div class="diagram-box w-full mt-2 bg-sky-100 border-sky-500">LSI on 'LastPostDateTime' (within PK: 'ForumX')</div>
+                     <p class="text-xs text-slate-500 mt-2">LSI shares the partition key 'ForumX' and provides an alternate sort order.</p>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow mt-4">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Use Cases & Best Practices</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>Use Cases:</strong> Alternative sort order within a partition key (e.g., forum threads by <code>LastPostDateTime</code>); queries needing strong consistency on secondary attributes with a known partition key.</li>
+                        <li><strong>When to Choose:</strong> Strongly consistent reads on an alternative sort key are required, and the 10GB limit is not an issue.</li>
+                        <li><strong>Sort Key Selection:</strong> Choose a scalar attribute providing a meaningful alternative sort order.</li>
+                        <li><strong>Manage Size Constraints:</strong> Monitor item collection sizes. If unbounded growth per PK is expected, use a GSI.</li>
+                        <li><strong>Attribute Projections:</strong> Balance storage/write costs with read performance. Projecting needed attributes avoids costly base table fetches.</li>
+                    </ul>
+                    <p class="text-slate-700 leading-relaxed mt-2"><strong>Impact on WCUs:</strong> Writes affecting LSI keys or projected attributes consume WCUs from the base table. Changing an LSI key value requires two LSI writes (delete old, put new).</p>
+                    <p class="text-slate-700 leading-relaxed mt-2">LSIs offer strong consistency due to their local architecture. However, the 10GB limit and immutability post-creation demand careful upfront planning.</p>
+                </div>
+            </section>
+
+            <section id="gsi" class="content-section space-y-4">
+                <h2 class="text-2xl font-semibold text-sky-600">Global Secondary Indexes (GSIs)</h2>
+                <p class="text-slate-700 leading-relaxed">A GSI offers more flexibility, allowing a partition key and optional sort key different from the base table's. GSI key schema (simple or composite) is independent of the base table.</p>
+
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Core Characteristics</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>Independent Throughput:</strong> Each GSI has its own RCUs/WCUs.</li>
+                        <li><strong>No 10GB Item Collection Limit (like LSIs):</strong> Queries can span all data in the base table, across the GSI's own partitions.</li>
+                        <li><strong>Online Creation/Deletion:</strong> Can be created/deleted anytime (creation involves backfilling).</li>
+                        <li><strong>Eventual Consistency:</strong> Only supports eventual consistency; changes propagate asynchronously.</li>
+                        <li><strong>Non-Unique Key Values:</strong> GSI keys don't need to be unique.</li>
+                        <li><strong>Sparse Nature (Default):</strong> Only includes items where its key attributes exist and are non-null.</li>
+                        <li><strong>Limit:</strong> Default 20 GSIs per table (adjustable).</li>
+                    </ul>
+                </div>
+                 <div class="diagram-container">
+                    <div class="text-sm text-slate-600 mb-2">Conceptual: GSI Structure</div>
+                    <div class="flex flex-col md:flex-row justify-around w-full items-start">
+                        <div class="diagram-box border-green-500 bg-green-50">Base Table<br/>(PK: OrderID, SK: ItemID)</div>
+                        <div class="diagram-arrow hidden md:block">➔ Updates</div>
+                        <div class="diagram-arrow block md:hidden my-2 self-center">↓ Updates</div>
+                        <div class="diagram-box border-purple-500 bg-purple-50">GSI on Status<br/>(PK: Status, SK: OrderDate)</div>
+                    </div>
+                     <p class="text-xs text-slate-500 mt-2">GSI has its own keys and partitions independently from the base table.</p>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow mt-4">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Use Cases & Best Practices</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>Use Cases:</strong> Table-wide queries on diverse attributes (e.g., orders by <code>status</code>); supporting varied access patterns; leaderboards (e.g., <code>GameTitle</code> PK, <code>TopScore</code> SK).</li>
+                        <li><strong>Partition Key:</strong> High cardinality for even GSI data distribution.</li>
+                        <li><strong>Sort Key:</strong> Support required range queries/ordering for the GSI.</li>
+                        <li><strong>Throughput:</strong> Provision independently. Under-provisioned GSI write capacity can throttle base table writes. On-demand mode can be useful.</li>
+                        <li><strong>Projections:</strong> Balance costs and query performance.</li>
+                        <li><strong>Eventual Consistency:</strong> Design applications to handle it.</li>
+                        <li><strong>Minimize Count:</strong> Use GSI overloading if appropriate.</li>
+                    </ul>
+                    <p class="text-slate-700 leading-relaxed mt-2"><strong>Impact on WCUs:</strong> Operations affecting GSI keys/projected attributes consume WCUs from the GSI's pool. Base table writes can be throttled if any affected GSI lacks write capacity.</p>
+                    <p class="text-slate-700 leading-relaxed mt-2">GSIs provide query flexibility but require managing eventual consistency and separate throughput. Their sparse nature is a key feature for targeted indexing.</p>
+                </div>
+            </section>
+
+            <section id="attribute-projections" class="content-section space-y-4">
+                <h2 class="text-2xl font-semibold text-sky-600">Attribute Projections in Secondary Indexes</h2>
+                <p class="text-slate-700 leading-relaxed">When creating a secondary index (LSI or GSI), you must define which attributes are copied (projected) from the base table into the index. Base table primary keys are always projected. For LSIs, the base table's sort key (if any) is also always projected.</p>
+                <p class="text-slate-700 leading-relaxed">Three projection types:</p>
+                <ul class="list-decimal list-inside text-slate-600 space-y-1 pl-4">
+                    <li><strong><code>KEYS_ONLY</code>:</strong> Base table PKs + index's own keys. Smallest index size.</li>
+                    <li><strong><code>INCLUDE</code>:</strong> <code>KEYS_ONLY</code> attributes + specified non-key attributes.</li>
+                    <li><strong><code>ALL</code>:</strong> All attributes from the base table item. Largest index, duplicates data.</li>
+                </ul>
+
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Impact of Projections</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>Storage Costs:</strong> <code>ALL</code> is highest, <code>KEYS_ONLY</code> is lowest. Index item size = sum of key sizes + projected attribute sizes + 100 bytes overhead.</li>
+                        <li><strong>Read Performance & Fetches:</strong>
+                            <ul class="list-disc list-inside ml-4">
+                                <li><strong>GSIs:</strong> Cannot fetch non-projected attributes. Requires a separate base table query.</li>
+                                <li><strong>LSIs:</strong> Can fetch non-projected attributes from base table (adds latency/RCU cost).</li>
+                                <li>Projecting needed attributes avoids fetches, improving latency but increasing storage/write costs.</li>
+                            </ul>
+                        </li>
+                        <li><strong>Write Costs (WCUs):</strong> Larger projections mean larger index items, increasing WCU consumption for updates to projected attributes.</li>
+                    </ul>
+                </div>
+                
+                <h3 class="text-xl font-semibold text-sky-600 mt-6 mb-3">Table 2: Secondary Index Projection Strategies</h3>
+                <div class="table-container overflow-x-auto bg-white p-4 rounded-lg shadow">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Projection Type</th>
+                                <th>Description</th>
+                                <th>Impact on Storage</th>
+                                <th>Impact on Read Performance & Fetches</th>
+                                <th>Impact on Write Costs</th>
+                                <th>Typical Use Case</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong><code>KEYS_ONLY</code></strong></td>
+                                <td>Base table PK, index keys only</td>
+                                <td>Lowest</td>
+                                <td>Slowest if other attributes needed. LSI: fetch from base (costly). GSI: cannot fetch; requires separate query on base table.</td>
+                                <td>Lowest, as fewer attributes trigger index updates.</td>
+                                <td>Infrequent queries on index; write-heavy table; minimizing index size/cost is paramount.</td>
+                            </tr>
+                            <tr>
+                                <td><strong><code>INCLUDE</code></strong></td>
+                                <td><code>KEYS_ONLY</code> attributes + specified non-key attributes</td>
+                                <td>Medium</td>
+                                <td>Faster if all queried attributes are included, avoiding fetches. LSI: fetch for non-included. GSI: cannot fetch non-included.</td>
+                                <td>Medium; updates to included attributes trigger index writes.</td>
+                                <td>Frequent queries needing a specific subset of attributes; balancing read performance and cost.</td>
+                            </tr>
+                            <tr>
+                                <td><strong><code>ALL</code></strong></td>
+                                <td>All attributes from the base table item</td>
+                                <td>Highest</td>
+                                <td>Fastest query performance as no fetches are ever needed from base table for attributes of the item.</td>
+                                <td>Highest, as any attribute update in the base item triggers an index write.</td>
+                                <td>Queries consistently need most/all item attributes; read latency is critical; higher storage/write costs acceptable.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow mt-4">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Strategic Selection</h3>
+                     <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>Project Only What's Needed:</strong> Use <code>INCLUDE</code> for specific subsets.</li>
+                        <li><strong>Avoid Projecting Rarely Needed, Frequently Updated Attributes.</strong></li>
+                        <li><strong>Limit on Projected Attributes:</strong> Total user-specified projected attributes (for <code>INCLUDE</code>) across all indexes on a table must not exceed 100.</li>
+                    </ul>
+                    <p class="text-slate-700 leading-relaxed mt-2">Projection choice is a critical optimization, balancing costs and query efficiency. Over-projecting wastes resources; under-projecting degrades performance or limits GSI query capabilities. Projections also contribute to "write amplification."</p>
+                </div>
+            </section>
+
+            <section id="advanced-patterns-overview" class="content-section space-y-4">
+                <h2 class="text-3xl font-semibold text-sky-700 border-b border-slate-300 pb-2">Advanced Key-Driven Design Patterns</h2>
+                <p class="text-slate-700 leading-relaxed">DynamoDB's flexible keying enables powerful design patterns beyond basic primary and secondary key usage. These patterns leverage key characteristics, especially of GSIs, to tackle complex query needs, optimize costs, and model intricate data relationships. This section explores Sparse Indexes, GSI Overloading, Adjacency Lists, and Materialized Aggregations.</p>
+            </section>
+
+            <section id="sparse-indexes" class="content-section space-y-4">
+                <h2 class="text-2xl font-semibold text-sky-600">Sparse Indexes (Primarily with GSIs)</h2>
+                <p class="text-slate-700 leading-relaxed">A sparse index (usually a GSI) intentionally includes only a subset of items from the base table. This is achieved by conditionally populating the GSI's key attribute(s) in base table items. DynamoDB only writes an item to a GSI if its defined key attributes exist in the base item.</p>
+                
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Benefits & Implementation</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>Benefits:</strong> Reduced storage costs, lower GSI write throughput consumption, efficient targeted queries on a smaller, pre-filtered dataset.</li>
+                        <li><strong>Implementation:</strong> Only populate GSI key attributes for items that should be in the indexed subset. E.g., an <code>OrderOpenDate</code> attribute set only for open orders; a GSI on this attribute would only contain open orders.</li>
+                    </ul>
+                </div>
+                <div class="diagram-container">
+                    <div class="text-sm text-slate-600 mb-2">Conceptual: Sparse GSI</div>
+                    <div class="flex flex-col md:flex-row justify-around w-full items-start">
+                        <div class="diagram-box border-green-500 bg-green-50 p-2">
+                            Base Table Items:
+                            <div class="text-xs mt-1">Order1 (Status: Open, GSI_Status_Key: 'OPEN')</div>
+                            <div class="text-xs mt-1">Order2 (Status: Shipped)</div>
+                            <div class="text-xs mt-1">Order3 (Status: Open, GSI_Status_Key: 'OPEN')</div>
+                        </div>
+                        <div class="diagram-arrow hidden md:block mx-4">➔</div>
+                         <div class="diagram-arrow block md:hidden my-2 self-center">↓</div>
+                        <div class="diagram-box border-purple-500 bg-purple-50 p-2">
+                            Sparse GSI (on GSI_Status_Key):
+                            <div class="text-xs mt-1">Order1 (GSI_Status_Key: 'OPEN')</div>
+                            <div class="text-xs mt-1">Order3 (GSI_Status_Key: 'OPEN')</div>
+                            <div class="text-xs mt-1 text-slate-400">(Order2 not included)</div>
+                        </div>
+                    </div>
+                     <p class="text-xs text-slate-500 mt-2">Only items with the GSI key attribute populated appear in the sparse GSI.</p>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow mt-4">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Use Cases</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li>Tracking active/open items (orders, tasks).</li>
+                        <li>Filtering by boolean flags or specific states (e.g., <code>isProcessed = false</code>).</li>
+                        <li>Featured content, high scores.</li>
+                        <li>Querying for existence of an optional attribute.</li>
+                    </ul>
+                    <p class="text-slate-700 leading-relaxed mt-2">Sparse GSIs enable "filtering at write time," leading to highly optimized reads. Careful naming of GSI key attributes is important in single-table designs to avoid unintended GSI population.</p>
+                </div>
+            </section>
+
+            <section id="gsi-overloading" class="content-section space-y-4">
+                <h2 class="text-2xl font-semibold text-sky-600">GSI Overloading</h2>
+                <p class="text-slate-700 leading-relaxed">GSI overloading allows a single GSI to support multiple, distinct query patterns by using generic GSI key attribute names (e.g., <code>GSI1PK</code>, <code>GSI1SK</code>) populated with different semantic values depending on the item type or access pattern. This helps reduce the total number of GSIs.</p>
+                
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Benefits & Implementation</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>Benefits:</strong> Maximizes GSI utility, reduces index count, saves costs.</li>
+                        <li><strong>Implementation:</strong>
+                            <ol class="list-decimal list-inside ml-4 space-y-1">
+                                <li>Define GSIs with generic keys (<code>GSI1PK</code>, <code>GSI1SK</code>).</li>
+                                <li>At write time, application logic determines query patterns and constructs specific values for these generic keys. E.g., for employees by state: <code>GSI1PK = "STATE#&lt;state_name&gt;"</code>; for orders by status: <code>GSI1PK = "STATUS#&lt;status_value&gt;"</code>.</li>
+                                <li>At query time, construct appropriate GSI key values.</li>
+                            </ol>
+                        </li>
+                    </ul>
+                </div>
+                 <div class="diagram-container">
+                    <div class="text-sm text-slate-600 mb-2">Conceptual: GSI Overloading</div>
+                    <div class="diagram-box w-full border-purple-500 bg-purple-50 p-2">
+                        Single GSI (PK: GSI1PK, SK: GSI1SK)
+                        <div class="text-xs mt-2">
+                            <strong>Query 1: Employees by State</strong><br/>
+                            Item: EmployeeA (GSI1PK: 'STATE#CA', GSI1SK: 'EmployeeName_JohnDoe')
+                        </div>
+                        <div class="text-xs mt-2">
+                            <strong>Query 2: Orders by Status</strong><br/>
+                            Item: Order123 (GSI1PK: 'STATUS#PENDING', GSI1SK: 'OrderDate_2023-01-15')
+                        </div>
+                    </div>
+                     <p class="text-xs text-slate-500 mt-2">One GSI serves multiple query patterns by populating generic keys differently.</p>
+                </div>
+                <p class="text-slate-700 leading-relaxed mt-4">GSI overloading exploits DynamoDB's schemaless nature in single-table designs. It shifts complexity to application logic for formatting keys and queries. Composite sort keys on the overloaded GSI can offer finer-grained querying.</p>
+            </section>
+
+            <section id="adjacency-lists" class="content-section space-y-4">
+                <h2 class="text-2xl font-semibold text-sky-600">Adjacency List Pattern</h2>
+                <p class="text-slate-700 leading-relaxed">The adjacency list pattern models many-to-many relationships and graph-like data (nodes and edges) in DynamoDB, often in single-table designs.</p>
+                
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Concept & Implementation</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>Entities as Nodes:</strong> Top-level entities use the table's PK. SK might store metadata (e.g., <code>PK=UserID, SK=METADATA#UserID</code>).</li>
+                        <li><strong>Relationships as Edges:</strong> Represented as additional items within the source entity's partition (same PK). SK is often the target entity ID, possibly prefixed (e.g., <code>PK=UserID_A, SK=FRIEND#UserID_B</code>).</li>
+                        <li><strong>Bidirectional Relationships with GSIs:</strong> To query reverse relationships (incoming edges), a GSI typically uses the original SK as <code>GSIPK</code> and original PK as <code>GSISK</code>, "inverting" the relationship.</li>
+                    </ul>
+                    <p class="text-sm text-slate-500 mt-1">Example: Invoicing system (Invoice to Bills).
+                        <br>Invoice item: <code>PK=InvoiceID1, SK=INV_METADATA</code>
+                        <br>Bills for InvoiceID1: <code>PK=InvoiceID1, SK=BillID_X</code>; <code>PK=InvoiceID1, SK=BillID_Y</code>
+                        <br>GSI to find invoices for BillID_X: <code>GSIPK=BillID_X, GSISK=InvoiceID1</code>
+                    </p>
+                </div>
+                 <div class="diagram-container">
+                    <div class="text-sm text-slate-600 mb-2">Conceptual: Adjacency List for Friendships</div>
+                    <div class="flex flex-col items-center space-y-1">
+                        <div class="diagram-box text-xs">UserA_PK (Node)</div>
+                        <div class="diagram-box text-xs">UserA_PK, Friend#UserB_SK (Edge)</div>
+                        <div class="diagram-box text-xs">UserA_PK, Friend#UserC_SK (Edge)</div>
+                    </div>
+                    <div class="diagram-arrow my-1"> GSI (inverted) </div>
+                     <div class="flex flex-col items-center space-y-1">
+                        <div class="diagram-box text-xs bg-sky-100 border-sky-500">Friend#UserB_GSIPK, UserA_GSISK (Find who friended UserB)</div>
+                    </div>
+                     <p class="text-xs text-slate-500 mt-2">GSIs enable querying relationships from the target's perspective.</p>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow mt-4">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Use Cases</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li>Social networks (users, friendships).</li>
+                        <li>Product catalogs (products, categories, suppliers).</li>
+                        <li>Organizational structures.</li>
+                        <li>Billing and order systems.</li>
+                    </ul>
+                    <p class="text-slate-700 leading-relaxed mt-2">Adjacency lists use item collections for outgoing relationships. GSIs are crucial for reverse lookups. Edge items can store attributes about the relationship. Powerful for 1-2 hop queries; complex graph traversals might suit dedicated graph DBs like Amazon Neptune.</p>
+                </div>
+            </section>
+
+            <section id="materialized-aggregations" class="content-section space-y-4">
+                <h2 class="text-2xl font-semibold text-sky-600">Materialized Aggregations using GSIs (and Streams/Lambda)</h2>
+                <p class="text-slate-700 leading-relaxed">DynamoDB is OLTP-optimized and doesn't natively support complex real-time aggregations (<code>SUM()</code>, <code>AVG()</code>). This pattern pre-calculates and stores aggregate values, often in a GSI or a separate aggregation table, updated via DynamoDB Streams and AWS Lambda.</p>
+                
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Concept & Implementation</h3>
+                    <ol class="list-decimal list-inside text-slate-600 space-y-1">
+                        <li><strong>Source Table:</strong> Contains raw transactional data, with DynamoDB Streams enabled.</li>
+                        <li><strong>Aggregation Target:</strong>
+                            <ul class="list-disc list-inside ml-4">
+                                <li><strong>GSI on Source Table:</strong> E.g., PK=<code>MetricName</code>, SK=<code>TimePeriod</code>.</li>
+                                <li><strong>Separate Aggregation Table:</strong> With its own PK for querying aggregates.</li>
+                            </ul>
+                        </li>
+                        <li><strong>AWS Lambda Function:</strong> Triggered by source table stream. Processes changes, updates aggregates, writes to target.</li>
+                    </ol>
+                </div>
+                 <div class="diagram-container">
+                    <div class="text-sm text-slate-600 mb-2">Conceptual: Materialized Aggregation Flow</div>
+                    <div class="flex flex-col md:flex-row items-center justify-center space-y-2 md:space-y-0 md:space-x-2">
+                        <div class="diagram-box text-xs">Source Table<br/>(e.g., Orders)</div>
+                        <div class="diagram-arrow">➔ Stream</div>
+                        <div class="diagram-box text-xs">AWS Lambda</div>
+                        <div class="diagram-arrow">➔ Update</div>
+                        <div class="diagram-box text-xs bg-sky-100 border-sky-500">Aggregation Table/GSI<br/>(e.g., DailySalesTotal)</div>
+                    </div>
+                     <p class="text-xs text-slate-500 mt-2">Changes in source data trigger Lambda to update pre-calculated aggregates.</p>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow mt-4">
+                    <h3 class="font-semibold text-lg text-slate-700 mb-2">Use Cases</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li>Dashboards (summary statistics).</li>
+                        <li>Real-time analytics (KPIs).</li>
+                        <li>Summary reports.</li>
+                        <li>Counting items matching criteria.</li>
+                    </ul>
+                    <p class="text-slate-700 leading-relaxed mt-2">This pattern trades write-path complexity/cost for improved read-path performance for aggregates. Aggregates are eventually consistent. Key design for the aggregation store is crucial for query flexibility.</p>
+                </div>
+            </section>
+            
+            <section id="best-practices" class="content-section space-y-6">
+                <h2 class="text-3xl font-semibold text-sky-700 border-b border-slate-300 pb-2">Holistic Key Design: Best Practices</h2>
+                <p class="text-slate-700 leading-relaxed">Effective key and index design in DynamoDB is foundational for performance, scalability, and cost. It requires understanding access patterns *before* designing schemas, often involving denormalization and aiming for fewer tables (e.g., single-table design).</p>
+
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="text-xl font-semibold text-sky-600 mb-3">A. The Primacy of Access Patterns</h3>
+                    <p class="text-slate-700 leading-relaxed">Thoroughly understand all required query patterns *before* designing. DynamoDB focuses on tailoring data structures for common, important queries to be fast and inexpensive, unlike relational DBs that prioritize normalization and ad-hoc query flexibility.</p>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="text-xl font-semibold text-sky-600 mb-3">B. Best Practices for Partition Keys (Base Table and GSIs)</h3>
+                     <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>High Cardinality:</strong> Large number of distinct values for even data/IO distribution, preventing hot spots.</li>
+                        <li><strong>Uniform Activity:</strong> Distribute request traffic evenly across partition key values.</li>
+                        <li><strong>Composite Attributes:</strong> Combine attributes if no single one offers sufficient cardinality.</li>
+                        <li><strong>Write Sharding for Hot Write Keys:</strong> Append a random/calculated suffix to distribute high-volume writes for a logical key.</li>
+                        <li><strong>Cache Popular Read Keys:</strong> Use DAX for read-heavy workloads on few popular items.</li>
+                        <li><strong>Avoid Sequential Keys for High-Volume Writes:</strong> Can concentrate writes on a single partition.</li>
+                    </ul>
+                </div>
+
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="text-xl font-semibold text-sky-600 mb-3">C. Best Practices for Sort Keys (Base Table and GSIs)</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>Enable Range Queries:</strong> Align with needs for <code>BETWEEN</code>, <code>begins_with</code>, etc.</li>
+                        <li><strong>Model Hierarchical Data:</strong> Use composite sort keys with delimiters (e.g., <code>USA#CALIFORNIA#SAN_FRANCISCO</code>).</li>
+                        <li><strong>Version Control:</strong> Use prefixes (e.g., <code>v0_item</code>, <code>v1_item</code>) for easy retrieval of latest/historical versions.</li>
+                        <li><strong>Uniqueness:</strong> Partition key + sort key combination must be unique.</li>
+                        <li><strong>Data Type Awareness:</strong> String (UTF-8), Number (numeric), Binary (unsigned byte) sorting.</li>
+                        <li><strong>Query by Sort Key Alone Not Possible:</strong> Query always needs an equality condition on the partition key.</li>
+                    </ul>
+                </div>
+                
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h3 class="text-xl font-semibold text-sky-600 mb-3">D. Optimizing Secondary Index Usage</h3>
+                    <ul class="list-disc list-inside text-slate-600 space-y-1">
+                        <li><strong>Keep Index Count Minimal:</strong> Each adds cost and overhead. Create only for essential, performance-critical queries.</li>
+                        <li><strong>Choose Projections Carefully:</strong> Balance storage/write costs vs. read performance. Project only necessary attributes.</li>
+                        <li><strong>Monitor LSI Item Collection Sizes:</strong> For the 10GB limit per partition key value.</li>
+                        <li><strong>Provision GSI Throughput Adequately:</strong> Under-provisioned GSI write capacity can throttle base table writes. Ensure GSI partition keys also promote even workload distribution.</li>
+                        <li><strong>Leverage Sparse Indexes and GSI Overloading:</strong> To improve efficiency, reduce index count, and save costs.</li>
+                    </ul>
+                </div>
+                <p class="text-slate-700 leading-relaxed mt-4">Single-table design relies heavily on effective primary keys and GSIs. Cost optimization is also highly influenced by key design. Fundamental flaws in primary key design are costly to fix, often requiring data migration. Thorough upfront analysis of access patterns is crucial.</p>
+            </section>
+
+            <section id="key-limitations" class="content-section space-y-4">
+                <h2 class="text-3xl font-semibold text-sky-700 border-b border-slate-300 pb-2">Key Limitations & Quotas</h2>
+                <p class="text-slate-700 leading-relaxed">Understanding DynamoDB's inherent limits and quotas is crucial for robust and scalable application design. These constraints affect how you structure your keys, design your indexes, and manage your data.</p>
+                
+                <h3 class="text-xl font-semibold text-sky-600 mt-6 mb-3">Table 3: Summary of Key DynamoDB Limitations and Quotas Related to Keys/Indexes</h3>
+                <div class="table-container overflow-x-auto bg-white p-4 rounded-lg shadow">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Resource/Limitation</th>
+                                <th>Default Quota/Limit</th>
+                                <th>Notes/Details</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>Local Secondary Indexes (LSIs) per table</td>
+                                <td>5</td>
+                                <td>Fixed limit.</td>
+                            </tr>
+                            <tr>
+                                <td>Global Secondary Indexes (GSIs) per table</td>
+                                <td>20</td>
+                                <td>Default quota, adjustable via AWS support.</td>
+                            </tr>
+                            <tr>
+                                <td>LSI Item Collection Size</td>
+                                <td>10 GB per partition key value</td>
+                                <td>Includes base table items and all LSI items for that PK value. Exceeding this causes write failures.</td>
+                            </tr>
+                            <tr>
+                                <td>Projected Attributes (user-specified for <code>INCLUDE</code>)</td>
+                                <td>100 combined</td>
+                                <td>Total attributes specified in <code>NonKeyAttributes</code> across all <code>INCLUDE</code> projections on all LSIs and GSIs for a table. Does not apply to <code>KEYS_ONLY</code> or <code>ALL</code> projections.</td>
+                            </tr>
+                            <tr>
+                                <td>Maximum Item Size</td>
+                                <td>400 KB</td>
+                                <td>Includes attribute names and values. Impacts how much data can be associated with a single key combination.</td>
+                            </tr>
+                            <tr>
+                                <td>Partition Key Value Length</td>
+                                <td>Min: 1 byte, Max: 2048 bytes (UTF-8)</td>
+                                <td>Applies to both base table and GSI partition keys.</td>
+                            </tr>
+                            <tr>
+                                <td>Sort Key Value Length</td>
+                                <td>Min: 1 byte, Max: 1024 bytes (UTF-8)</td>
+                                <td>Applies to both base table and GSI/LSI sort keys.</td>
+                            </tr>
+                            <tr>
+                                <td>GSI/LSI Key Attribute Types</td>
+                                <td>String, Number, Binary</td>
+                                <td>Only these scalar types can be used for index key attributes.</td>
+                            </tr>
+                             <tr>
+                                <td>Maximum number of tables per account per region</td>
+                                <td>2,500</td>
+                                <td>Initial quota, adjustable up to 10,000. Multiple accounts recommended for more.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <section id="conclusion" class="content-section space-y-4">
+                <h2 class="text-3xl font-semibold text-sky-700 border-b border-slate-300 pb-2">Conclusion</h2>
+                <p class="text-slate-700 leading-relaxed">The design of keys and indexes in Amazon DynamoDB is a critical determinant of application performance, scalability, and cost-efficiency. This interactive guide has detailed the spectrum of keying options, from primary keys to secondary indexes and advanced design patterns.</p>
+                <p class="text-slate-700 leading-relaxed">A recurring theme is the paramount importance of understanding an application's specific access patterns *before* schema design. DynamoDB key design is about optimizing for known, frequent, and critical queries. The choice of partition keys, sort keys, and the judicious use of secondary indexes with appropriate projections are all pivotal decisions.</p>
+                <p class="text-slate-700 leading-relaxed">While GSIs offer evolution paths, foundational primary key choices have long-lasting implications. Continuous monitoring and understanding these principles will enable developers to harness DynamoDB's full potential. Mastering these keying strategies is fundamental to unlocking the speed, scale, and efficiency that DynamoDB promises.</p>
+            </section>
+
+        </main>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const navLinks = document.querySelectorAll('#sidebarNav .nav-link');
+            const contentSections = document.querySelectorAll('.content-section');
+            const sidebarNav = document.getElementById('sidebarNav');
+
+            function setActiveSection(targetId) {
+                contentSections.forEach(section => {
+                    section.classList.remove('active');
+                    if (section.id === targetId) {
+                        section.classList.add('active');
+                    }
+                });
+
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    if (link.dataset.target === targetId) {
+                        link.classList.add('active');
+                        // Expand parent if it's a sub-link
+                        const parentGroup = link.closest('.nav-group');
+                        if (parentGroup) {
+                            const parentSpan = parentGroup.querySelector('span.nav-link');
+                            if (parentSpan && parentSpan !== link) {
+                                // This is a sub-link, ensure parent is visually distinct or handled if needed
+                            }
+                        }
+                    }
+                });
+                 // Scroll to the top of the main content area
+                document.querySelector('main').scrollTop = 0;
+            }
+            
+            // Set initial active section based on the first nav link
+            if (navLinks.length > 0) {
+                 const initialTarget = navLinks[0].dataset.target;
+                 setActiveSection(initialTarget);
+            }
+
+
+            navLinks.forEach(link => {
+                link.addEventListener('click', (event) => {
+                    event.preventDefault();
+                    const targetId = link.dataset.target;
+                    
+                    // If it's a group span, it might not directly link to a section
+                    // but rather toggle sub-items or act as a header.
+                    // For this SPA, all nav-links will try to show a section.
+                    // If a section with targetId exists, show it.
+                    if (document.getElementById(targetId)) {
+                         setActiveSection(targetId);
+                    } else {
+                        // If a group span is clicked and has no direct section,
+                        // try to activate the first sub-link's section if available.
+                        const firstSubLink = link.parentElement.querySelector('.nav-sub-link');
+                        if (firstSubLink && document.getElementById(firstSubLink.dataset.target)) {
+                            setActiveSection(firstSubLink.dataset.target);
+                        } else {
+                             console.warn(`Content section with id "${targetId}" not found.`);
+                        }
+                    }
+                });
+            });
+
+            // Collapsible content
+            const collapsibleTriggers = document.querySelectorAll('.collapsible-trigger');
+            collapsibleTriggers.forEach(trigger => {
+                trigger.addEventListener('click', () => {
+                    trigger.classList.toggle('open');
+                    const content = trigger.nextElementSibling;
+                    if (content && content.classList.contains('collapsible-content')) {
+                        content.style.display = content.style.display === 'block' ? 'none' : 'block';
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,1116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Key-Value Store Explorer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Visualization & Content Choices: 
+        - Report Tables (1-7): Rendered as responsive HTML tables. Goal: Inform, Compare. Interaction: None initially, focus on clear presentation. Justification: Direct representation of summarized data.
+        - LSM Tree Architecture: HTML/CSS diagram (divs styled as components: MemTable, WAL, SSTables, Compaction flow). Goal: Explain write/read path. Interaction: Potentially hover/click for brief descriptions of components. Justification: Visual flow is easier to grasp than text alone.
+        - Partitioning Strategies (Range, Hash, Consistent Hashing): Simplified HTML/CSS visual representations. Goal: Explain, Compare. Interaction: Static visual. Justification: Basic visual aid for abstract concepts.
+        - Replication Models (Leader-Follower, Multi-Leader, Leaderless): HTML/CSS diagrams. Goal: Explain, Compare. Justification: Visualizing data flow and node roles.
+        - CAP Theorem: Simple HTML/CSS visual (e.g., a triangle or Venn-like diagram). Goal: Explain trade-offs.
+        - DynamoDB & Cassandra Architectures: High-level block diagrams using HTML/CSS. Goal: Illustrate key components and relationships (e.g., partitions, replication across AZs/DCs, indexes).
+        - Textual Content: Extracted from the report, structured with headings, lists, paragraphs. Key terms could have tooltips or click-to-reveal definitions. Goal: Inform, Define.
+        - NO SVG graphics used. NO Mermaid JS used. Chart.js will be used for one comparative chart (e.g., LSI vs GSI features) if suitable data points can be extracted, otherwise focus is on HTML/CSS diagrams.
+        -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .sidebar-link { transition: all 0.3s ease; }
+        .sidebar-link:hover, .sidebar-link.active { background-color: #0369a1; color: white; }
+        .content-section { display: none; }
+        .content-section.active { display: block; }
+        .table-container table { width: 100%; border-collapse: collapse; }
+        .table-container th, .table-container td { border: 1px solid #e5e7eb; padding: 8px; text-align: left; }
+        .table-container th { background-color: #f3f4f6; }
+        .diagram-box { border: 2px solid #0ea5e9; padding: 10px; margin: 5px; border-radius: 5px; text-align: center; background-color: #f0f9ff; }
+        .diagram-arrow { text-align: center; font-size: 24px; color: #0ea5e9; margin: 5px 0; }
+        .lsm-component { background-color: #e0f2fe; border: 1px solid #7dd3fc; padding: 8px; margin-bottom: 8px; border-radius: 4px; }
+        .tooltip { position: relative; display: inline-block; cursor: pointer; }
+        .tooltip .tooltiptext { visibility: hidden; width: 200px; background-color: #555; color: #fff; text-align: center; border-radius: 6px; padding: 5px 0; position: absolute; z-index: 1; bottom: 125%; left: 50%; margin-left: -100px; opacity: 0; transition: opacity 0.3s; font-size: 0.875rem; }
+        .tooltip:hover .tooltiptext { visibility: visible; opacity: 1; }
+        .chart-container { position: relative; width: 100%; max-width: 600px; margin-left: auto; margin-right: auto; height: 300px; max-height: 400px; }
+        @media (min-width: 768px) { .chart-container { height: 350px; } }
+
+        h2 { font-size: 1.75rem; font-weight: 600; margin-bottom: 1rem; color: #1e3a8a; }
+        h3 { font-size: 1.4rem; font-weight: 600; margin-top: 1.5rem; margin-bottom: 0.75rem; color: #1d4ed8; }
+        h4 { font-size: 1.15rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.5rem; color: #2563eb; }
+        p, li { line-height: 1.6; margin-bottom: 0.75rem; }
+        ul { list-style-type: disc; margin-left: 1.5rem; }
+        strong { font-weight: 600; }
+        .code-like { font-family: monospace; background-color: #f0f0f0; padding: 0.1em 0.3em; border-radius: 3px; }
+    </style>
+</head>
+<body class="bg-stone-100 text-neutral-800">
+    <div class="flex h-screen">
+        <aside class="w-72 bg-sky-700 text-white p-5 space-y-2 overflow-y-auto fixed top-0 left-0 h-full shadow-lg">
+            <h1 class="text-2xl font-bold mb-6">KV Store Explorer</h1>
+            <nav>
+                <button class="sidebar-link w-full text-left px-3 py-2.5 rounded-md text-sm font-medium" data-target="intro">Home / Introduction</button>
+                
+                <div>
+                    <h3 class="mt-4 mb-2 px-3 text-xs font-semibold uppercase text-sky-200 tracking-wider">I. KV Store Fundamentals</h3>
+                    <button class="sidebar-link w-full text-left px-3 py-2 rounded-md text-sm" data-target="kv-definitions">A. Definitions & Operations</button>
+                    <button class="sidebar-link w-full text-left px-3 py-2 rounded-md text-sm" data-target="kv-storage-engine">B. Core Storage Engine (LSM)</button>
+                </div>
+
+                <div>
+                    <h3 class="mt-4 mb-2 px-3 text-xs font-semibold uppercase text-sky-200 tracking-wider">II. Distributed KV Concepts</h3>
+                    <button class="sidebar-link w-full text-left px-3 py-2 rounded-md text-sm" data-target="dist-partitioning">A. Partitioning</button>
+                    <button class="sidebar-link w-full text-left px-3 py-2 rounded-md text-sm" data-target="dist-replication">B. Replication</button>
+                    <button class="sidebar-link w-full text-left px-3 py-2 rounded-md text-sm" data-target="dist-consistency">C. Consistency (CAP/PACELC)</button>
+                    <button class="sidebar-link w-full text-left px-3 py-2 rounded-md text-sm" data-target="dist-fault-tolerance">D. Fault Tolerance</button>
+                    <button class="sidebar-link w-full text-left px-3 py-2 rounded-md text-sm" data-target="dist-conflict-resolution">E. Conflict Resolution</button>
+                </div>
+                
+                <div>
+                    <h3 class="mt-4 mb-2 px-3 text-xs font-semibold uppercase text-sky-200 tracking-wider">III. Amazon DynamoDB</h3>
+                    <button class="sidebar-link w-full text-left px-3 py-2 rounded-md text-sm" data-target="dynamodb-data-model">A. Data Model</button>
+                    <button class="sidebar-link w-full text-left px-3 py-2 rounded-md text-sm" data-target="dynamodb-architecture">B. Architecture</button>
+                    <button class="sidebar-link w-full text-left px-3 py-2 rounded-md text-sm" data-target="dynamodb-consistency">C. Consistency</button>
+                    <button class="sidebar-link w-full text-left px-3 py-2 rounded-md text-sm" data-target="dynamodb-search">D. Search (Indexes)</button>
+                </div>
+
+                <div>
+                    <h3 class="mt-4 mb-2 px-3 text-xs font-semibold uppercase text-sky-200 tracking-wider">IV. Apache Cassandra</h3>
+                    <button class="sidebar-link w-full text-left px-3 py-2 rounded-md text-sm" data-target="cassandra-data-model">A. Data Model</button>
+                    <button class="sidebar-link w-full text-left px-3 py-2 rounded-md text-sm" data-target="cassandra-architecture">B. Architecture</button>
+                    <button class="sidebar-link w-full text-left px-3 py-2 rounded-md text-sm" data-target="cassandra-consistency">C. Consistency</button>
+                    <button class="sidebar-link w-full text-left px-3 py-2 rounded-md text-sm" data-target="cassandra-search">D. Search (Indexes)</button>
+                </div>
+                 <div>
+                    <h3 class="mt-4 mb-2 px-3 text-xs font-semibold uppercase text-sky-200 tracking-wider">V. Visualizations</h3>
+                    <button class="sidebar-link w-full text-left px-3 py-2 rounded-md text-sm" data-target="visualizations">Interactive Charts</button>
+                </div>
+            </nav>
+        </aside>
+
+        <main class="ml-72 flex-1 p-8 overflow-y-auto bg-white">
+            <div id="intro" class="content-section">
+                <h2>Welcome to the Interactive Key-Value Store Explorer!</h2>
+                <p>This application provides an interactive way to explore the concepts presented in the "Designing a Distributed Key-Value Store" report. Key-value stores are a fundamental component of modern scalable applications, offering simple, high-performance data storage and retrieval.</p>
+                <p>Use the navigation panel on the left to dive into specific topics, from basic definitions and storage engine architectures to the intricacies of distributed systems like Amazon DynamoDB and Apache Cassandra. Each section aims to break down complex information into understandable parts, supported by diagrams and summaries.</p>
+                <p><strong>Key Goals of this Explorer:</strong></p>
+                <ul>
+                    <li>To provide a clear and structured overview of key-value store concepts.</li>
+                    <li>To explain the architectural principles behind distributed key-value databases.</li>
+                    <li>To offer insights into the specific designs and features of DynamoDB and Cassandra.</li>
+                    <li>To make learning about these complex systems more engaging and accessible.</li>
+                </ul>
+                <p>Start by selecting a topic from the sidebar to begin your exploration!</p>
+            </div>
+
+            <div id="kv-definitions" class="content-section">
+                <h2>I.A. Defining Key-Value Stores: Principles, Operations, and Use Cases</h2>
+                <p>A key-value store is a type of NoSQL database that uses a simple key-value method to store data. A key is a unique identifier, and the value can be any kind of data, from simple strings to complex JSON objects. This model is highly flexible and efficient.</p>
+                
+                <h4>Core Principles:</h4>
+                <ul>
+                    <li><strong>Keys:</strong> Unique identifiers for accessing values. Can be strings, hashes, etc.</li>
+                    <li><strong>Values:</strong> Can be strings, numbers, JSON, BLOBs. Schema-less at the database level.</li>
+                    <li><strong>Simplicity:</strong> One of the most straightforward NoSQL data models.</li>
+                    <li><strong>Sorted Key Organization (Optional):</strong> Many systems (especially LSM-based) keep keys sorted for efficient range queries.</li>
+                </ul>
+
+                <h4>Basic Operations:</h4>
+                <ul>
+                    <li><code class="code-like">PUT (key, value)</code>: Adds or updates a key-value pair.</li>
+                    <li><code class="code-like">GET (key)</code>: Retrieves the value for a given key.</li>
+                    <li><code class="code-like">DELETE (key)</code>: Removes a key-value pair.</li>
+                </ul>
+                
+                <h4>Advantages:</h4>
+                <ul>
+                    <li><strong>Speed:</strong> Optimized for fast reads and writes due to direct key lookups.</li>
+                    <li><strong>Flexibility:</strong> Schema-less nature allows dynamic data structures.</li>
+                    <li><strong>Scalability:</strong> Designed for horizontal scaling across multiple nodes.</li>
+                    <li><strong>Developer Productivity:</strong> Simpler model can reduce development complexity.</li>
+                </ul>
+
+                <h4>Common Use Cases:</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="p-4 bg-sky-50 rounded-lg border border-sky-200"><strong>Caching:</strong> Storing frequently accessed data in memory (e.g., Redis).</div>
+                    <div class="p-4 bg-sky-50 rounded-lg border border-sky-200"><strong>Session Storage:</strong> Managing user session data for web apps.</div>
+                    <div class="p-4 bg-sky-50 rounded-lg border border-sky-200"><strong>User Profiles:</strong> Storing user preferences and settings.</div>
+                    <div class="p-4 bg-sky-50 rounded-lg border border-sky-200"><strong>Real-time Recommendations:</strong> Powering recommendation engines.</div>
+                    <div class="p-4 bg-sky-50 rounded-lg border border-sky-200"><strong>Leaderboards & Counting:</strong> Real-time scores and counts.</div>
+                    <div class="p-4 bg-sky-50 rounded-lg border border-sky-200"><strong>IoT Data:</strong> High-velocity sensor data.</div>
+                </div>
+
+                <h4 class="mt-6">Table 1: Core Key-Value Store Operations and Properties</h4>
+                <div class="table-container overflow-x-auto">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Operation</th>
+                                <th>Description</th>
+                                <th>Key Considerations</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><code class="code-like">PUT (key, value)</code></td>
+                                <td>Adds a new key-value pair or updates the value if the key already exists.</td>
+                                <td>Atomicity for single-key updates is common. Key must be unique. Operation should ideally be idempotent.</td>
+                            </tr>
+                            <tr>
+                                <td><code class="code-like">GET (key)</code></td>
+                                <td>Retrieves the value associated with a given key.</td>
+                                <td>Performance is highly dependent on key design and storage engine. Consistency model affects what version of data is returned.</td>
+                            </tr>
+                            <tr>
+                                <td><code class="code-like">DELETE (key)</code></td>
+                                <td>Removes a key-value pair from the store.</td>
+                                <td>Tombstones might be used in LSM-based systems, requiring compaction for actual space reclamation.</td>
+                            </tr>
+                            <tr>
+                                <td>Range Query</td>
+                                <td>Retrieves key-value pairs where keys fall within a specified range (requires sorted key organization).</td>
+                                <td>Efficiency depends on how keys are sorted and partitioned. Not all key-value stores support this natively or efficiently.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="mt-4">While simple, the lack of a rich query language means querying by value attributes requires secondary indexes or application-side scanning. Schema flexibility is powerful but requires application-level discipline to avoid a "data model mess."</p>
+            </div>
+
+            <div id="kv-storage-engine" class="content-section">
+                <h2>I.B. Core Storage Engine Architecture (LSM Trees)</h2>
+                <p>Many high-performance key-value stores, especially those optimized for writes, use a Log-Structured Merge-Tree (LSM-Tree) as their storage engine. LSM-Trees convert random application writes into sequential disk writes, improving throughput.</p>
+
+                <h4>Key Components of an LSM-Tree:</h4>
+                <div class="space-y-3">
+                    <div class="lsm-component"><strong>MemTable (Write Buffer):</strong> An in-memory structure (e.g., balanced tree) where incoming writes (PUTs/DELETEs) are buffered and sorted by key. Makes writes very fast.</div>
+                    <div class="diagram-arrow">⬇️</div>
+                    <div class="lsm-component"><strong>Write-Ahead Log (WAL):</strong> Writes are first recorded here (on persistent storage) for durability before going to the MemTable. Ensures recovery on crash.</div>
+                    <div class="diagram-arrow">⬇️ (When MemTable is full/periodically)</div>
+                    <div class="lsm-component"><strong>Immutable MemTable:</strong> Active MemTable becomes immutable and is scheduled for flushing. New writes go to a new active MemTable.</div>
+                    <div class="diagram-arrow">⬇️ (Flushing)</div>
+                    <div class="lsm-component"><strong>Sorted String Table (SSTable):</strong> Immutable MemTable contents are written to disk as an immutable, sorted file. SSTables are often organized in levels (L0, L1, ... Ln).</div>
+                </div>
+                
+                <h4 class="mt-6">Background Processes & Optimizations:</h4>
+                <ul>
+                    <li><strong>Compaction:</strong> Periodically merges SSTables to remove deleted/overwritten data, reduce read amplification (fewer files to check), and reclaim disk space. Different strategies (size-tiered, leveled) exist.</li>
+                    <li><strong>Block Cache:</strong> Caches frequently accessed data blocks from SSTables in memory to speed up reads.</li>
+                    <li><strong>Bloom Filters:</strong> Probabilistic structures per SSTable to quickly check if a key *definitely does not exist*, avoiding unnecessary disk I/O.</li>
+                </ul>
+
+                <h4>Operations Flow:</h4>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                        <h5>Write Path:</h5>
+                        <ol class="list-decimal ml-5">
+                            <li>Append to WAL (disk).</li>
+                            <li>Insert into MemTable (memory).</li>
+                            <li>Acknowledge client.</li>
+                            <li>(Later) Flush full MemTable to new SSTable (disk).</li>
+                        </ol>
+                    </div>
+                    <div>
+                        <h5>Read Path (more complex):</h5>
+                        <ol class="list-decimal ml-5">
+                            <li>Check active MemTable.</li>
+                            <li>Check immutable MemTable(s).</li>
+                            <li>Check Block Cache.</li>
+                            <li>Check Bloom Filters for SSTables.</li>
+                            <li>Search relevant SSTables (newest to oldest).</li>
+                        </ol>
+                    </div>
+                </div>
+
+                <h4>Amplification Factors:</h4>
+                <ul>
+                    <li><strong>Write Amplification:</strong> Ratio of total disk writes (incl. compaction) to application writes.</li>
+                    <li><strong>Read Amplification:</strong> Number of disk reads/structures checked per logical read.</li>
+                    <li><strong>Space Amplification:</strong> Ratio of disk space used to logical data size.</li>
+                </ul>
+                <p class="mt-4">LSM-Trees prioritize write throughput but can have higher read latency if many SSTables need checking. Compaction is crucial but resource-intensive.</p>
+            </div>
+
+            <div id="dist-partitioning" class="content-section">
+                <h2>II.A. Achieving Scalability: Partitioning and Load Balancing</h2>
+                <p>Partitioning (sharding) divides a dataset into smaller segments (partitions/shards) distributed across multiple nodes. This enables horizontal scaling by distributing data and query load.</p>
+
+                <h4>Common Partitioning Techniques:</h4>
+                <div class="space-y-4">
+                    <div>
+                        <h5>1. Range Partitioning:</h5>
+                        <p>Keys assigned to partitions based on continuous ranges (e.g., A-E to P1, F-K to P2).</p>
+                        <ul class="list-disc ml-5">
+                            <li><strong>Pros:</strong> Efficient for range queries within a partition.</li>
+                            <li><strong>Cons:</strong> Can lead to hot spots if data/access is skewed. Requires range management.</li>
+                        </ul>
+                        <div class="flex justify-around mt-2">
+                            <div class="diagram-box w-1/4">Node 1<br>(Keys A-E)</div>
+                            <div class="diagram-box w-1/4">Node 2<br>(Keys F-K)</div>
+                            <div class="diagram-box w-1/4">Node 3<br>(Keys L-P)</div>
+                        </div>
+                    </div>
+                    <div>
+                        <h5>2. Hash Partitioning:</h5>
+                        <p>Keys mapped to partitions using <code class="code-like">hash(key) % num_nodes</code>.</p>
+                        <ul class="list-disc ml-5">
+                            <li><strong>Pros:</strong> Tends to spread data evenly, reducing hot spots.</li>
+                            <li><strong>Cons:</strong> Inefficient range queries (keys scattered). Node changes require massive data reshuffling.</li>
+                        </ul>
+                         <div class="flex justify-around mt-2">
+                            <div class="diagram-box w-1/4">Node 1<br>(hash % 3 == 0)</div>
+                            <div class="diagram-box w-1/4">Node 2<br>(hash % 3 == 1)</div>
+                            <div class="diagram-box w-1/4">Node 3<br>(hash % 3 == 2)</div>
+                        </div>
+                    </div>
+                    <div>
+                        <h5>3. Consistent Hashing:</h5>
+                        <p>Keys and nodes mapped to a conceptual "ring." Key assigned to the first node encountered clockwise. Minimizes data movement on node changes.</p>
+                        <ul class="list-disc ml-5">
+                            <li><strong>Virtual Nodes (Vnodes):</strong> Physical nodes own multiple virtual nodes on the ring for better distribution and smoother rebalancing. Used by Cassandra.</li>
+                            <li><strong>Pros:</strong> Low data movement on scaling.</li>
+                            <li><strong>Cons:</strong> Basic form can have uneven load; vnodes mitigate this.</li>
+                        </ul>
+                        <div class="diagram-box mt-2">Conceptual Ring with Nodes & Keys</div>
+                    </div>
+                    <div>
+                        <h5>4. Directory-Based Partitioning:</h5>
+                        <p>A lookup service/metadata directory maps keys/ranges to partitions/nodes.</p>
+                        <ul class="list-disc ml-5">
+                            <li><strong>Pros:</strong> Flexible, explicit control.</li>
+                            <li><strong>Cons:</strong> Directory can be a bottleneck/single point of failure if centralized.</li>
+                        </ul>
+                    </div>
+                </div>
+                <p class="mt-4"><strong>Load balancing</strong> works with partitioning to distribute client requests across nodes.</p>
+                
+                <h4 class="mt-6">Table 2: Comparison of Data Partitioning Strategies</h4>
+                <div class="table-container overflow-x-auto">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Strategy</th>
+                                <th>How it Works (Brief)</th>
+                                <th>Data Distribution</th>
+                                <th>Range Query Efficiency (on Partition Key)</th>
+                                <th>Scalability (Node Addition/Removal)</th>
+                                <th>Hotspot Risk</th>
+                                <th>Key Systems Using It (Examples)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Range Partitioning</strong></td>
+                                <td>Keys assigned to partitions based on continuous ranges.</td>
+                                <td>Ordered, but can be skewed.</td>
+                                <td>High (if query range aligns).</td>
+                                <td>Can be complex, may require range splitting.</td>
+                                <td>High</td>
+                                <td>HBase, some RDBMS sharding</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Hash Partitioning</strong></td>
+                                <td><code class="code-like">hash(key) % N_nodes</code> determines partition.</td>
+                                <td>Generally uniform.</td>
+                                <td>Low (keys scattered).</td>
+                                <td>High data movement.</td>
+                                <td>Low</td>
+                                <td>Simpler custom implementations</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Consistent Hashing</strong></td>
+                                <td>Keys/nodes mapped to a ring; key assigned to next node.</td>
+                                <td>Can be uneven without vnodes; better with vnodes.</td>
+                                <td>Low (keys scattered).</td>
+                                <td>Low data movement.</td>
+                                <td>Moderate</td>
+                                <td>Cassandra, DynamoDB, Riak</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Directory-Based</strong></td>
+                                <td>Metadata service maps keys/ranges to partitions.</td>
+                                <td>Dependent on directory logic.</td>
+                                <td>Depends on directory structure.</td>
+                                <td>Depends on directory update mechanism.</td>
+                                <td>Moderate</td>
+                                <td>Azure Table Storage</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div id="dist-replication" class="content-section">
+                <h2>II.B. Ensuring Durability and Availability: Replication Strategies</h2>
+                <p>Replication creates multiple copies (replicas) of data on different nodes/racks/data centers to protect against data loss and ensure high availability.</p>
+                
+                <h4>Common Replication Models:</h4>
+                <div class="space-y-4">
+                    <div>
+                        <h5>1. Leader-Follower (Primary-Replica / Master-Slave):</h5>
+                        <p>One leader handles all writes for a data partition, then propagates changes to followers. Reads can often be served by followers.</p>
+                        <div class="flex justify-around my-2 p-4 border rounded-md bg-blue-50">
+                            <div class="diagram-box w-1/3">Client ➡️ Leader (Write)</div>
+                            <div class="diagram-arrow w-1/6">➡️</div>
+                            <div class="diagram-box w-1/3">Leader ➡️ Followers (Replicate)</div>
+                        </div>
+                        <ul class="list-disc ml-5">
+                            <li><strong>Synchronous:</strong> Leader waits for follower ACKs. Stronger consistency, higher write latency, lower availability if follower slow/down.</li>
+                            <li><strong>Asynchronous:</strong> Leader doesn't wait. Lower latency, higher availability, but risk of data loss on leader failure / stale reads from followers (eventual consistency).</li>
+                            <li><strong>Leader Election:</strong> Needed if leader fails (e.g., Paxos, Raft).</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h5>2. Multi-Leader (Multi-Primary / Master-Master):</h5>
+                        <p>Multiple nodes can accept writes. Each leader replicates to other leaders/followers. Common in geo-distributed systems.</p>
+                         <div class="flex justify-around my-2 p-4 border rounded-md bg-green-50">
+                            <div class="diagram-box w-2/5">Client ➡️ Leader A (Write) 🔄 Leader B</div>
+                            <div class="diagram-box w-2/5">Client ➡️ Leader B (Write) 🔄 Leader A</div>
+                        </div>
+                        <ul class="list-disc ml-5">
+                            <li><strong>Pros:</strong> Better write availability/performance (local leader).</li>
+                            <li><strong>Cons:</strong> Complex conflict resolution if same data updated on different leaders concurrently.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h5>3. Leaderless (e.g., Dynamo-style, Quorum-based):</h5>
+                        <p>All replicas are peers; any can accept reads/writes. Client/coordinator sends write to <code class="code-like">W</code> replicas, reads from <code class="code-like">R</code> replicas. Total replicas <code class="code-like">N</code>.</p>
+                        <div class="flex justify-around my-2 p-4 border rounded-md bg-purple-50">
+                            <div class="diagram-box w-1/4">Replica 1</div>
+                            <div class="diagram-box w-1/4">Replica 2</div>
+                            <div class="diagram-box w-1/4">Replica 3</div>
+                        </div>
+                        <p class="text-center">Client writes to W, reads from R.</p>
+                        <ul class="list-disc ml-5">
+                            <li><strong>Quorums:</strong> If <code class="code-like">R + W > N</code>, read sees latest write (stronger consistency). If <code class="code-like">R + W <= N</code>, eventual consistency.</li>
+                            <li><strong>Pros:</strong> High availability for reads/writes (no single leader bottleneck).</li>
+                            <li><strong>Cons:</strong> Tunable but weaker consistency by default. Conflict resolution needed.</li>
+                        </ul>
+                    </div>
+                </div>
+                <p class="mt-4"><strong>Replication Factor (RF):</strong> Total number of copies of each data item. Higher RF = more durability/read availability, but higher storage/write costs.</p>
+            </div>
+
+            <div id="dist-consistency" class="content-section">
+                <h2>II.C. Managing Data Consistency: CAP & PACELC Theorems, Consistency Models</h2>
+                <p>Consistency ensures all clients see the same, up-to-date data. Challenging in distributed systems.</p>
+
+                <h4>CAP Theorem (Brewer):</h4>
+                <p>A distributed store can provide at most two of: Consistency (C), Availability (A), Partition Tolerance (P).</p>
+                <div class="flex justify-center my-4">
+                    <div class="diagram-box w-1/2 p-6 relative">
+                        <div class="absolute top-0 left-1/2 -translate-x-1/2 -mt-3 px-2 bg-white text-lg font-semibold">CAP</div>
+                        <div class="flex justify-between items-center h-24">
+                            <span class="font-bold text-xl">C</span>
+                            <span class="font-bold text-xl">A</span>
+                        </div>
+                        <div class="text-center mt-2 font-bold text-xl">P</div>
+                        <p class="text-sm mt-2 text-center">Network partitions (P) are a given. Trade-off is C vs. A.</p>
+                    </div>
+                </div>
+                <ul>
+                    <li><strong>CP (Consistency + Partition Tolerance):</strong> Preserves consistency, may become unavailable during partition.</li>
+                    <li><strong>AP (Availability + Partition Tolerance):</strong> Stays available, may return stale/conflicting data during partition.</li>
+                </ul>
+
+                <h4>PACELC Theorem (Abadi):</h4>
+                <p>Extends CAP: If Partition (P), then Availability (A) vs. Consistency (C). Else (normal operation), Latency (L) vs. Consistency (C).</p>
+
+                <h4>Common Consistency Models:</h4>
+                <ul class="space-y-2">
+                    <li><strong>Strong (Linearizability):</strong> All ops appear instant, reads see latest write. Simplifies app logic, higher latency/lower availability.</li>
+                    <li><strong>Sequential:</strong> All ops seen in same global order; per-process order maintained.</li>
+                    <li><strong>Causal:</strong> Causally related ops seen in order. Concurrent ops may differ.</li>
+                    <li><strong>Eventual:</strong> Replicas eventually converge if no new updates. Reads might be stale. Prioritizes availability/low latency.
+                        <ul class="list-disc ml-8 mt-1">
+                            <li><em>Session Guarantees (improve UX):</em> Read-Your-Writes, Monotonic Reads, Monotonic Writes, Writes-Follow-Reads.</li>
+                        </ul>
+                    </li>
+                </ul>
+
+                <p class="mt-2"><strong>Tunable Consistency:</strong> (e.g., Cassandra) Application specifies consistency per-operation. Stronger if <code class="code-like">R + W > N</code> (Read replicas + Write replicas > Total replicas).</p>
+                <p class="mt-2">Strong consistency simplifies development but weaker models shift responsibility to developers to handle stale data/conflicts.</p>
+                
+                <h4 class="mt-6">Table 3: Overview of Consistency Models</h4>
+                <div class="table-container overflow-x-auto">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Model</th>
+                                <th>Core Guarantee</th>
+                                <th>Impact on Reads</th>
+                                <th>Latency</th>
+                                <th>Availability</th>
+                                <th>Common Use Case</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Strong/Linearizable</strong></td>
+                                <td>All reads see latest completed write, ops atomic.</td>
+                                <td>Always current.</td>
+                                <td>Higher</td>
+                                <td>Lower during partitions</td>
+                                <td>Financial transactions, distributed locks.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Sequential</strong></td>
+                                <td>All ops seen in some global order; per-process order maintained.</td>
+                                <td>Globally ordered.</td>
+                                <td>Moderate</td>
+                                <td>Moderate</td>
+                                <td>Turn-based games.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Causal</strong></td>
+                                <td>Causally related operations seen in order by all.</td>
+                                <td>Causally consistent.</td>
+                                <td>Moderate-Lower</td>
+                                <td>Moderate-Higher</td>
+                                <td>Collaborative apps, messaging.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Eventual</strong></td>
+                                <td>Replicas eventually converge if no new updates.</td>
+                                <td>May read stale data.</td>
+                                <td>Lower</td>
+                                <td>Higher</td>
+                                <td>Caching, social media feeds.</td>
+                            </tr>
+                             <tr>
+                                <td><em>+ Read-Your-Writes</em></td>
+                                <td>A client always sees its own writes.</td>
+                                <td>Own writes visible.</td>
+                                <td>Low</td>
+                                <td>High</td>
+                                <td>User profile updates.</td>
+                            </tr>
+                            <tr>
+                                <td><em>+ Monotonic Reads</em></td>
+                                <td>Subsequent reads by a client never see older data.</td>
+                                <td>Never regresses.</td>
+                                <td>Low</td>
+                                <td>High</td>
+                                <td>Timelines, counters.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="dist-fault-tolerance" class="content-section">
+                <h2>II.D. Building Robust Systems: Fault Tolerance Mechanisms</h2>
+                <p>Fault tolerance enables a system to operate correctly despite component failures (hardware, network, software).</p>
+
+                <h4>Key Mechanisms:</h4>
+                <ol class="list-decimal ml-5 space-y-3">
+                    <li><strong>Failure Detection:</strong>
+                        <ul class="list-disc ml-5">
+                            <li><strong>Heartbeats:</strong> Nodes send periodic "alive" messages. Missed heartbeats indicate failure.</li>
+                            <li><strong>Gossip Protocols:</strong> Nodes exchange state info (liveness) with random peers. Failures propagate. (Used by Cassandra).</li>
+                        </ul>
+                    </li>
+                    <li><strong>Handling Temporary Failures:</strong>
+                        <ul class="list-disc ml-5">
+                            <li><strong>Hinted Handoff:</strong> If a replica is down for a write, coordinator stores a "hint" locally or on another replica. Replays hint when node recovers. (Used by Cassandra).</li>
+                            <li><strong>Sloppy Quorum:</strong> If primary replicas unavailable, operation may proceed with "stand-in" nodes. Maintains availability, may need later reconciliation.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Handling Permanent Failures & Data Reconciliation:</strong>
+                        <ul class="list-disc ml-5">
+                            <li><strong>Read Repair:</strong> If inconsistencies found during read from multiple replicas, latest data is written back to stale replica(s). (Used by Cassandra).</li>
+                            <li><strong>Anti-Entropy (Active Repair):</strong> Background process compares data across replicas and resolves inconsistencies.
+                                <ul class="list-disc ml-5">
+                                    <li><strong>Merkle Trees (Hash Trees):</strong> Efficiently identify differing data ranges by comparing tree hashes, only streaming differences for repair. (Used by Cassandra's `nodetool repair`).</li>
+                                </ul>
+                            </li>
+                        </ul>
+                    </li>
+                    <li><strong>Consensus Algorithms (Paxos, Raft):</strong>
+                        <p>For critical operations needing agreement (leader election, schema changes, transactions).</p>
+                        <ul class="list-disc ml-5">
+                            <li><strong>Paxos:</strong> Robust, but complex. Used in Chubby, ZooKeeper. DynamoDB uses Paxos-like protocol for leader election within partitions.</li>
+                            <li><strong>Raft:</strong> More understandable alternative. Used in etcd, Consul.</li>
+                            <li>Not for every KV read/write (too slow), but vital for metadata management.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Fault Tolerance Design Patterns:</strong> Circuit Breaker, Bulkhead, Retry Pattern.</li>
+                </ol>
+                <p class="mt-4">Robust fault tolerance is a multi-layered strategy: detection, temporary handling, permanent repair, and consensus for critical state.</p>
+            </div>
+
+            <div id="dist-conflict-resolution" class="content-section">
+                <h2>II.E. Handling Concurrent Updates: Conflict Resolution Strategies</h2>
+                <p>When the same data is updated concurrently on different replicas (in multi-leader/leaderless systems or during partitions), conflicts arise and need resolution.</p>
+
+                <h4>Common Strategies:</h4>
+                <ol class="list-decimal ml-5 space-y-3">
+                    <li><strong>Last Write Wins (LWW):</strong>
+                        <p>Each write has a timestamp. Version with the latest timestamp wins; others discarded.</p>
+                        <ul class="list-disc ml-5">
+                            <li><strong>Pros:</strong> Simple, automatic, deterministic.</li>
+                            <li><strong>Cons:</strong> Can lose updates if timestamps don't reflect causal order (due to clock skew). Used by Cassandra (default) and DynamoDB Global Tables.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Vector Clocks:</strong>
+                        <p>Track causality using <code class="code-like">(node_id, counter)</code> vectors. Helps distinguish true concurrent updates from ordered ones.</p>
+                        <ul class="list-disc ml-5">
+                            <li><strong>Pros:</strong> Accurately detects concurrent writes, preserves causality.</li>
+                            <li><strong>Cons:</strong> Can be large (metadata overhead). Often delegates resolution of true conflicts to the client/application.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Conflict-Free Replicated Data Types (CRDTs):</strong>
+                        <p>Specialized data structures (counters, sets) where concurrent ops mathematically guarantee eventual convergence without explicit conflict resolution at merge time.</p>
+                        <ul class="list-disc ml-5">
+                            <li><strong>Pros:</strong> Conflict resolution "built-in" for supported types/ops.</li>
+                            <li><strong>Cons:</strong> Not general-purpose. Designing new CRDTs is complex. (Used by Redis Active-Active).</li>
+                        </ul>
+                    </li>
+                    <li><strong>Application-Level / Custom Logic:</strong>
+                        <p>Database detects conflict, delegates resolution to the application using its business rules.</p>
+                        <ul class="list-disc ml-5">
+                            <li><strong>Pros:</strong> Maximum flexibility, tailored to app semantics.</li>
+                            <li><strong>Cons:</strong> Increases application complexity, error-prone.</li>
+                        </ul>
+                    </li>
+                </ol>
+                <p class="mt-4">API design is important: <code class="code-like">get()</code> might return multiple versions + context; <code class="code-like">put()</code> might require context to detect write conflicts.</p>
+            </div>
+
+            <div id="dynamodb-data-model" class="content-section">
+                <h2>III.A. Amazon DynamoDB: Data Model and Organization</h2>
+                <p>DynamoDB is a fully managed NoSQL service for key-value and document data, designed for low latency at scale.</p>
+                <ul>
+                    <li><strong>Tables:</strong> Top-level containers, schema-less except for primary key.</li>
+                    <li><strong>Items:</strong> Collections of attributes (like rows/documents). Uniquely identified by primary key. Max size 400KB.
+                        <ul class="list-disc ml-5"><li>For >400KB: compress, split items, or store large objects in S3 and link.</li></ul>
+                    </li>
+                    <li><strong>Attributes:</strong> Name-value pairs within items.</li>
+                </ul>
+
+                <h4>Primary Keys (PK): Defined at table creation, immutable.</h4>
+                <ol class="list-decimal ml-5">
+                    <li><strong>Simple Primary Key (Partition Key only):</strong>
+                        <ul class="list-disc ml-5">
+                            <li>Single attribute (partition key / hash key).</li>
+                            <li>Hash of partition key value determines item's partition.</li>
+                            <li>Items not sorted by partition key across table.</li>
+                            <li>Critical: Choose high-cardinality, uniformly accessed partition key.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Composite Primary Key (Partition Key + Sort Key):</strong>
+                        <ul class="list-disc ml-5">
+                            <li>Two attributes: partition key + sort key (range key).</li>
+                            <li>Partition key hash determines partition.</li>
+                            <li>Within that partition, items with same partition key are stored together, ordered by sort key.</li>
+                            <li>Allows querying by partition key + conditions on sort key (exact, range, `begins_with`).</li>
+                        </ul>
+                    </li>
+                </ol>
+                <p><strong>Item Collections:</strong> All items sharing the same partition key value (in tables with composite PK). Max 10GB total size for an item collection across base table + LSIs.</p>
+                
+                <h4>Supported Data Types:</h4>
+                Scalar (String, Number, Binary, Boolean, Null), Document (List, Map), Set (String Set, Number Set, Binary Set). PK attributes must be String, Number, or Binary.
+
+                <h4 class="mt-6">Table 4: DynamoDB Primary Key Configurations and Query Capabilities</h4>
+                <div class="table-container overflow-x-auto">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Primary Key Type</th>
+                                <th>Structure</th>
+                                <th>How Data is Stored/Located</th>
+                                <th>Supported Query Operations (Primary Key Based)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Simple Primary Key</strong></td>
+                                <td>Single attribute (e.g., `UserID`)</td>
+                                <td>Hashed partition key determines partition. Items not sorted by partition key.</td>
+                                <td>`GetItem` (exact match on partition key). `BatchGetItem`. `Scan`.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Composite Primary Key</strong></td>
+                                <td>Two attributes (e.g., `OrderID` (PK), `OrderItemID` (SK))</td>
+                                <td>Hashed partition key determines partition. Within partition, items sorted by sort key.</td>
+                                <td>`GetItem` (exact PK+SK). `Query` (on PK, with conditions on SK: exact, range, `begins_with`).</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="dynamodb-architecture" class="content-section">
+                <h2>III.B. Amazon DynamoDB: Architecture for Scale and Availability</h2>
+                <p>DynamoDB is serverless; AWS manages infrastructure, patching, scaling.</p>
+                <h4>Partitioning:</h4>
+                <ul>
+                    <li>Data auto-distributed across partitions based on partition key hash.</li>
+                    <li>Each partition has storage (10GB) and throughput (RCU/WCU) limits.</li>
+                    <li>DynamoDB auto-splits "hot" or full partitions to redistribute load/data. Transparent to apps.</li>
+                </ul>
+                <h4>Replication:</h4>
+                <ul>
+                    <li>Data in each partition auto-replicated across multiple Availability Zones (AZs, typically 3) in a region.</li>
+                    <li>One replica node is leader per partition; handles writes and strongly consistent reads. Changes propagated to followers.</li>
+                    <li>Auto leader election (Paxos-based) on leader failure.</li>
+                </ul>
+                <h4>Capacity Modes:</h4>
+                <ol class="list-decimal ml-5">
+                    <li><strong>Provisioned Capacity:</strong> User specifies RCUs/WCUs. Throttling if exceeded. Auto-scaling available.
+                        <ul class="list-disc ml-5">
+                            <li>1 RCU = 1 strongly consistent read/sec (or 2 eventually consistent) for item up to 4KB.</li>
+                            <li>1 WCU = 1 write/sec for item up to 1KB.</li>
+                        </ul>
+                    </li>
+                    <li><strong>On-Demand Capacity:</strong> Pay-per-request. Auto-scales throughput. Good for unpredictable workloads.</li>
+                </ol>
+                <h4>Global Tables:</h4>
+                <ul>
+                    <li>Multi-region, active-active replication.</li>
+                    <li>Low-latency access for global users (read/write to nearest region).</li>
+                    <li>Asynchronous replication between regions (eventual consistency).</li>
+                    <li>Conflict resolution: Last-Writer-Wins (LWW) based on timestamps.</li>
+                </ul>
+                <h4>Other Features:</h4>
+                DynamoDB Streams (capture data changes), ACID Transactions (multi-item, multi-table in same region).
+            </div>
+
+            <div id="dynamodb-consistency" class="content-section">
+                <h2>III.C. Amazon DynamoDB: Consistency</h2>
+                <p>DynamoDB offers different read consistency options.</p>
+                <h4>Read Consistency Options:</h4>
+                <ol class="list-decimal ml-5">
+                    <li><strong>Eventually Consistent Reads (Default):</strong>
+                        <ul class="list-disc ml-5">
+                            <li>Reads from any replica, not necessarily leader.</li>
+                            <li>Maximizes read throughput, minimizes latency.</li>
+                            <li>May return stale data (ms lag from recent write).</li>
+                            <li>Consumes 0.5 RCU compared to strong read for same size.</li>
+                        </ul>
+                    </li>
+                    <li><strong>Strongly Consistent Reads:</strong>
+                        <ul class="list-disc ml-5">
+                            <li>Reads from partition leader.</li>
+                            <li>Guarantees most up-to-date data.</li>
+                            <li>Higher latency, lower throughput.</li>
+                            <li>Consumes 1 RCU for up to 4KB item.</li>
+                            <li>Availability tied to leader node.</li>
+                        </ul>
+                    </li>
+                </ol>
+                <h4>Write Consistency:</h4>
+                <p>All writes go to partition leader, synchronously replicated to at least one other follower in a different AZ before ACK. Strong consistency for writes within region.</p>
+                <h4>Global Tables Consistency:</h4>
+                <p>Asynchronous replication between regions = eventual consistency. LWW for conflicts.</p>
+                <h4>Transactions:</h4>
+                <p>Provide ACID guarantees for operations within the transaction, ensuring strong consistency for that set of changes.</p>
+                <p class="mt-4">Developers must choose consistency per-request, balancing recency, performance, and cost.</p>
+            </div>
+
+            <div id="dynamodb-search" class="content-section">
+                <h2>III.D. Amazon DynamoDB: Search Capabilities (Indexes)</h2>
+                <p>Secondary indexes allow querying on non-primary key attributes.</p>
+                <h4>Local Secondary Indexes (LSIs):</h4>
+                <ul>
+                    <li><strong>Key Structure:</strong> Same partition key as base table, different sort key. Alternative sort order for items with same partition key.</li>
+                    <li><strong>Scope:</strong> Local to base table's partition key. LSI partition tied to base table partition.</li>
+                    <li><strong>Consistency:</strong> Supports eventually and strongly consistent reads. Updates atomic to table & LSI.</li>
+                    <li><strong>Throughput:</strong> Shares base table's provisioned throughput.</li>
+                    <li><strong>Limit:</strong> 10GB item collection size limit (base table items + LSI items per partition key value).</li>
+                    <li><strong>Creation:</strong> Only at table creation. Cannot add/remove later. Max 5 per table.</li>
+                    <li><strong>Use Case:</strong> Alternative sort order within a partition, strongly consistent queries on non-PK sort key.</li>
+                </ul>
+                <h4>Global Secondary Indexes (GSIs):</h4>
+                <ul>
+                    <li><strong>Key Structure:</strong> Partition key and optional sort key can be different from base table's PK. Allows different access patterns.</li>
+                    <li><strong>Scope:</strong> Global; queries can span all data in base table. GSI data stored in its own partitions.</li>
+                    <li><strong>Consistency:</strong> Eventually consistent only. Updates from base table propagated asynchronously. Replication lag possible.</li>
+                    <li><strong>Throughput:</strong> Own independent provisioned throughput.</li>
+                    <li><strong>Limit:</strong> No 10GB item collection limit like LSIs.</li>
+                    <li><strong>Creation:</strong> At table creation or add/remove from existing table. Max 20 per table (default).</li>
+                    <li><strong>Use Case:</strong> Queries on non-PK attributes across entire table; eventual consistency acceptable.</li>
+                </ul>
+                <h4>Projected Attributes:</h4>
+                <p>When creating an index, specify attributes to project (copy) from base table: <code class="code-like">KEYS_ONLY</code>, <code class="code-like">INCLUDE</code> (specific non-key attributes), or <code class="code-like">ALL</code>. Impacts storage cost and query efficiency.</p>
+                
+                <h4 class="mt-6">Table 5: Comparison of DynamoDB Secondary Indexes: LSI vs. GSI</h4>
+                <div class="table-container overflow-x-auto">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Feature</th>
+                                <th>Local Secondary Index (LSI)</th>
+                                <th>Global Secondary Index (GSI)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Primary Key Structure</strong></td>
+                                <td>Same partition key as base, different sort key.</td>
+                                <td>Can have PK and SK different from base.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Data Scope</strong></td>
+                                <td>"Local" to base table's partition key.</td>
+                                <td>"Global"; queries can span all data.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Consistency Model</strong></td>
+                                <td>Eventually or Strongly Consistent.</td>
+                                <td>Eventually Consistent only.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Throughput</strong></td>
+                                <td>Shares with base table.</td>
+                                <td>Independent.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Item Collection Limit</strong></td>
+                                <td>10GB per partition key value (base + LSI).</td>
+                                <td>No such limit.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Creation Time</strong></td>
+                                <td>Only at table creation.</td>
+                                <td>At table creation or later.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Number per Table</strong></td>
+                                <td>Up to 5.</td>
+                                <td>Up to 20 (default).</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="mt-4">LSIs offer strong consistency but are limited; GSIs offer flexibility but are eventually consistent.</p>
+            </div>
+
+            <div id="cassandra-data-model" class="content-section">
+                <h2>IV.A. Apache Cassandra: Data Model and Organization</h2>
+                <p>Cassandra is an open-source, distributed, wide-column store for high availability and linear scalability.</p>
+                <ul>
+                    <li><strong>Keyspaces:</strong> Outermost container (like schema/DB). Defines replication strategy/factor.</li>
+                    <li><strong>Tables (Column Families):</strong> Collections of rows within a keyspace.</li>
+                    <li><strong>Rows:</strong> Collection of columns associated with a unique primary key.</li>
+                    <li><strong>Columns:</strong> Triplet of (name, value, timestamp). Timestamp for LWW conflict resolution.</li>
+                    <li><strong>Wide-Column Model:</strong>
+                        <ul class="list-disc ml-5">
+                            <li>Rows in same table can have different columns (beyond PK). Schema flexibility.</li>
+                            <li>"Wide row": Single partition key groups many CQL rows (differentiated by clustering columns).</li>
+                        </ul>
+                    </li>
+                </ul>
+                <h4>Primary Key (Partition Key + Optional Clustering Columns):</h4>
+                <ol class="list-decimal ml-5">
+                    <li><strong>Partition Key:</strong> Mandatory. Determines data distribution node(s) via hashing (Murmur3Partitioner -> token on ring).
+                        <ul class="list-disc ml-5">
+                            <li><strong>Simple:</strong> Single column.</li>
+                            <li><strong>Composite:</strong> Multiple columns (for finer-grained partitions).</li>
+                            <li>All partition key columns must be in WHERE clause (unless 2i).</li>
+                        </ul>
+                    </li>
+                    <li><strong>Clustering Columns (Optional):</strong>
+                        <ul class="list-disc ml-5">
+                            <li>Determines on-disk sorting of rows *within* a partition.</li>
+                            <li>Allows efficient range queries, slices, filtering on clustering columns within a partition.</li>
+                            <li>Rows with same partition key are co-located, ordered by clustering columns.</li>
+                        </ul>
+                    </li>
+                </ol>
+                <p><strong>Static Columns:</strong> Shared by all CQL rows in a partition (if clustering columns exist). For metadata applying to whole partition group.</p>
+                <h4>Comparison to Relational Model:</h4>
+                <ul>
+                    <li><strong>Denormalization by Design:</strong> Joins not supported/expensive. Data often duplicated into query-specific tables.</li>
+                    <li><strong>Schema Flexibility:</strong> Rows can have different columns.</li>
+                    <li><strong>Query-Driven Modeling:</strong> Tables designed for specific queries.</li>
+                </ul>
+                <p>Effective PK design is crucial: spread data evenly (high cardinality partition key), minimize partitions read per query.</p>
+                <h4 class="mt-6">Table 6: Cassandra Primary Key Components and Their Roles</h4>
+                <div class="table-container overflow-x-auto">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Key Component</th>
+                                <th>Definition</th>
+                                <th>Primary Role</th>
+                                <th>Impact on Queries</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Partition Key (Simple/Composite)</strong></td>
+                                <td>First part of PK; determines node.</td>
+                                <td>Data distribution across cluster.</td>
+                                <td>Queries must specify all PK cols (unless 2i). Defines data co-location boundary.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Clustering Column(s)</strong></td>
+                                <td>Columns after partition key in PK def.</td>
+                                <td>On-disk sorting of rows within each partition.</td>
+                                <td>Allows range queries, slicing, filtering on clustering cols within a partition.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div id="cassandra-architecture" class="content-section">
+                <h2>IV.B. Apache Cassandra: Architecture for Scale and Resilience</h2>
+                <p>Designed for horizontal scalability, HA, no single point of failure.</p>
+                <h4>Partitioning (Consistent Hashing + Vnodes):</h4>
+                <ul>
+                    <li><strong>Partitioner (Murmur3Partitioner):</strong> Hashes partition key to a token.</li>
+                    <li><strong>Consistent Hashing Ring:</strong> Tokens map to positions on a ring. Nodes own token ranges.</li>
+                    <li><strong>Virtual Nodes (Vnodes):</strong> Physical nodes own multiple, smaller, non-contiguous token ranges (vnodes).
+                        <ul class="list-disc ml-5">
+                            <li><strong>Benefits:</strong> Smoother data distribution, easier node add/remove (less rebalancing impact), faster rebuild/repair, better heterogeneous hardware use.</li>
+                        </ul>
+                    </li>
+                </ul>
+                <h4>Replication:</h4>
+                <ul>
+                    <li><strong>Replication Factor (RF):</strong> Per keyspace, # of copies of each row. RF=3 means 3 copies on 3 nodes.</li>
+                    <li><strong>Replication Strategies:</strong>
+                        <ol class="list-decimal ml-5">
+                            <li><strong>`SimpleStrategy` (Not for production):</strong> Places replicas clockwise on ring, not topology-aware.</li>
+                            <li><strong>`NetworkTopologyStrategy` (Recommended):</strong> Topology-aware. Specify RF per data center. Places replicas on different racks within a DC for fault tolerance.</li>
+                        </ol>
+                    </li>
+                </ul>
+                <p><strong>Snitches:</strong> Provide network topology info (DC, rack per node) to `NetworkTopologyStrategy` for smart replica placement. (e.g., `GossipingPropertyFileSnitch`, `Ec2Snitch`).</p>
+                <h4>Write Path:</h4>
+                <p>Client connects to any node (coordinator). Coordinator finds replica nodes for token. Forwards write to all replicas. ACKs client once write consistency level met.</p>
+                <h4>Read Path:</h4>
+                <p>Client connects to coordinator. Coordinator identifies replicas. Sends read requests per read consistency level. Returns latest data (by timestamp). May trigger read repair for stale replicas.</p>
+            </div>
+
+            <div id="cassandra-consistency" class="content-section">
+                <h2>IV.C. Apache Cassandra: Consistency</h2>
+                <p>Cassandra offers tunable consistency per-operation (read/write).</p>
+                <h4>Common Consistency Levels (Examples):</h4>
+                <ul>
+                    <li><strong>Writes:</strong> `ANY` (highest avail, lowest consistency), `ONE`, `TWO`, `THREE`, `QUORUM` (quorum across all DCs), `LOCAL_QUORUM` (quorum in coordinator's DC), `EACH_QUORUM` (quorum in each DC), `ALL` (strongest, lowest avail).</li>
+                    <li><strong>Reads:</strong> `ONE`, `TWO`, `THREE`, `QUORUM`, `LOCAL_QUORUM`, `ALL`.</li>
+                </ul>
+                <p><strong>Achieving Strong Consistency:</strong> Typically if <code class="code-like">R + W > RF</code> (Read replicas + Write replicas > Replication Factor). Ensures read/write sets overlap.</p>
+                <h4>Conflict Resolution: Last Write Wins (LWW)</h4>
+                <p>Based on microsecond-precision timestamp with each column value. If multiple versions, latest timestamp wins.</p>
+                <ul class="list-disc ml-5">
+                    <li>Timestamps client-supplied or coordinator-generated.</li>
+                    <li>Simple, deterministic, but relies on clock accuracy. Significant skew can cause lost updates if timestamps don't reflect causal order.</li>
+                </ul>
+                <p class="mt-4">Tunable consistency is powerful but requires careful configuration to match application needs and avoid unexpected inconsistencies.</p>
+            </div>
+
+            <div id="cassandra-search" class="content-section">
+                <h2>IV.D. Apache Cassandra: Search Capabilities (Indexes)</h2>
+                <p>For querying on non-primary key attributes.</p>
+                <h4>Traditional Secondary Indexes (2i):</h4>
+                <ul>
+                    <li><strong>How:</strong> Hidden table per index (indexed column value = PK, base table PK = value). Index data local to each node.</li>
+                    <li><strong>Limitations:</strong>
+                        <ul class="list-disc ml-5">
+                            <li>Scatter-gather queries (can be slow, high latency).</li>
+                            <li>Poor for high-cardinality columns. Problematic for very low-cardinality if many rows per value.</li>
+                            <li>No efficient range queries. Write amplification.</li>
+                            <li>Use with caution: best for low-cardinality, highly selective queries.</li>
+                        </ul>
+                    </li>
+                </ul>
+                <h4>Storage-Attached Indexes (SAI) (Newer, Improved):</h4>
+                <ul>
+                    <li><strong>Architecture:</strong> Deeply integrated with storage engine (memtables, SSTables). Optimized on-disk structures (tries, k-d trees).</li>
+                    <li><strong>Use Cases:</strong> Efficient equality and numeric range queries. `CONTAINS` on text collections. Can index part of composite PK. Vector search.</li>
+                    <li><strong>Advantages over 2i:</strong> Less disk space, better query performance, reduced write overhead, simpler operations (index streams with SSTables).</li>
+                    <li><strong>Limitations:</strong> Typically single-column index. Multi-SAI queries often intersect results. Still some overhead. Limited # of SAI per table.</li>
+                </ul>
+                <p class="mt-4">SAI significantly improves secondary indexing, making Cassandra more flexible for diverse queries without excessive denormalization.</p>
+                <h4 class="mt-6">Table 7: Comparison of Cassandra Indexing: Traditional 2i vs. SAI</h4>
+                <div class="table-container overflow-x-auto">
+                     <table>
+                        <thead>
+                            <tr>
+                                <th>Feature</th>
+                                <th>Traditional Secondary Index (2i)</th>
+                                <th>Storage-Attached Index (SAI)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Architecture</strong></td>
+                                <td>Hidden table per index; local to node.</td>
+                                <td>Integrated with storage engine; optimized on-disk structures.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Query Support</strong></td>
+                                <td>Primarily equality. Poor for ranges, high-cardinality.</td>
+                                <td>Equality, numeric ranges, text `CONTAINS`, vector search.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Performance</strong></td>
+                                <td>Scatter-gather; poor for high-cardinality.</td>
+                                <td>Generally better performance across cardinalities.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Write Overhead</strong></td>
+                                <td>Significant write amplification.</td>
+                                <td>Reduced write-time overhead.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Disk Usage</strong></td>
+                                <td>Can be high.</td>
+                                <td>Significantly lower.</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Operational Impact</strong></td>
+                                <td>Index rebuilds can be intensive.</td>
+                                <td>Indexes streamed with SSTables; simpler.</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div id="visualizations" class="content-section">
+                <h2>V. Visualizations & Comparisons</h2>
+                <p>This section provides a visual comparison of Local Secondary Indexes (LSIs) and Global Secondary Indexes (GSIs) in Amazon DynamoDB, based on some of their key characteristics. This helps to quickly grasp the trade-offs involved in choosing one over the other.</p>
+
+                <div class="chart-container my-8">
+                    <canvas id="lsiVsGsiChart"></canvas>
+                </div>
+                <p class="text-sm text-center text-gray-600">Chart comparing LSI and GSI features. Higher bars indicate 'more' or 'better' for that feature from a flexibility/power perspective, though specific needs vary.</p>
+
+                <h4 class="mt-8">Interpreting the Chart:</h4>
+                <ul>
+                    <li><strong>Query Flexibility (GSI higher):</strong> GSIs allow querying on attributes completely different from the base table's primary key, across all data. LSIs are tied to the base table's partition key.</li>
+                    <li><strong>Consistency (LSI higher):</strong> LSIs support strongly consistent reads. GSIs are eventually consistent only.</li>
+                    <li><strong>Throughput Independence (GSI higher):</strong> GSIs have their own provisioned throughput, separate from the base table. LSI throughput is shared.</li>
+                    <li><strong>Creation Flexibility (GSI higher):</strong> GSIs can be added/removed after table creation. LSIs only at table creation.</li>
+                    <li><strong>Item Collection Limit (GSI "higher" as in less restrictive):</strong> GSIs do not have the 10GB item collection size limit that LSIs impose per partition key value.</li>
+                </ul>
+                <p>This chart is a simplified representation. The "better" choice always depends on the specific application requirements for consistency, query patterns, and operational management.</p>
+            </div>
+
+        </main>
+    </div>
+
+    <script>
+        const navLinks = document.querySelectorAll('.sidebar-link');
+        const contentSections = document.querySelectorAll('.content-section');
+        let currentChart = null;
+
+        function setActiveLink(targetId) {
+            navLinks.forEach(link => {
+                if (link.dataset.target === targetId) {
+                    link.classList.add('active', 'bg-sky-800');
+                } else {
+                    link.classList.remove('active', 'bg-sky-800');
+                }
+            });
+        }
+
+        function showSection(targetId) {
+            contentSections.forEach(section => {
+                if (section.id === targetId) {
+                    section.classList.add('active');
+                } else {
+                    section.classList.remove('active');
+                }
+            });
+            setActiveLink(targetId);
+            window.scrollTo(0, 0); // Scroll to top of page on section change
+
+            if (targetId === 'visualizations') {
+                renderLsiVsGsiChart();
+            } else {
+                if (currentChart) {
+                    currentChart.destroy();
+                    currentChart = null;
+                }
+            }
+        }
+
+        navLinks.forEach(link => {
+            link.addEventListener('click', () => {
+                const targetId = link.dataset.target;
+                showSection(targetId);
+            });
+        });
+
+        // Show intro section by default
+        showSection('intro');
+        setActiveLink('intro');
+
+        function renderLsiVsGsiChart() {
+            if (currentChart) {
+                currentChart.destroy();
+            }
+            const ctx = document.getElementById('lsiVsGsiChart').getContext('2d');
+            const data = {
+                labels: ['Query Flexibility', 'Consistency Strength', 'Throughput Independence', 'Creation Flexibility', 'Item Collection Freedom'],
+                datasets: [
+                    {
+                        label: 'LSI',
+                        data: [3, 9, 2, 2, 2], // Scaled 1-10 for visualization
+                        backgroundColor: 'rgba(56, 189, 248, 0.6)', // Light Blue
+                        borderColor: 'rgba(56, 189, 248, 1)',
+                        borderWidth: 1
+                    },
+                    {
+                        label: 'GSI',
+                        data: [9, 3, 9, 9, 9], // Scaled 1-10 for visualization
+                        backgroundColor: 'rgba(251, 191, 36, 0.6)', // Amber
+                        borderColor: 'rgba(251, 191, 36, 1)',
+                        borderWidth: 1
+                    }
+                ]
+            };
+            currentChart = new Chart(ctx, {
+                type: 'bar',
+                data: data,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            max: 10,
+                            title: {
+                                display: true,
+                                text: 'Relative Score (Illustrative)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'DynamoDB: LSI vs. GSI Feature Comparison',
+                            font: { size: 16 }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += context.parsed.y + ' (Illustrative score)';
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    },
+                    animation: {
+                        duration: 1000,
+                        easing: 'easeInOutQuart'
+                    }
+                }
+            });
+        }
+
+    </script>
+</body>
+</html>

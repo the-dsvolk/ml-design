@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Distributed Caching Guide</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Visualization & Content Choices:
+        - What is Cache: Text + HTML/CSS diagram (Inform, HTML/Tailwind).
+        - Benefits: Icon list (Inform, HTML/Tailwind/Unicode).
+        - Mechanisms: Clickable cards with HTML/CSS diagrams (Inform/Organize, HTML/Tailwind/JS).
+        - CAP Theorem: HTML/CSS diagram (Inform, HTML/Tailwind).
+        - Use Cases: Icon list (Inform, HTML/Tailwind/Unicode).
+        - Deployment Architectures: Tabs + Chart.js bar chart comparing Latency/Scalability/Complexity from Table 2 (Compare/Inform, HTML/Tailwind/JS/Chart.js).
+        - Popular Products: Cards + Chart.js radar/grouped bar chart for feature comparison from Table 3 (Compare/Inform, HTML/Tailwind/JS/Chart.js).
+        - Managed Services: Cards (Inform, HTML/Tailwind/JS).
+        - Consistency Models: Accordion (Inform/Explain, HTML/Tailwind/JS).
+        - NRW Quorum: Interactive HTML/CSS diagram updating text based on N,R,W inputs (Inform/Explain, HTML/Tailwind/JS).
+        - Coherency (CDC/ES): HTML/CSS flow diagrams (Inform, HTML/Tailwind).
+        - Security/Monitoring: Icon lists (Inform, HTML/Tailwind/Unicode).
+        - Justification: Prioritizes interactive exploration and visual summaries over dense text, using Chart.js for quantitative comparisons and HTML/CSS for conceptual diagrams to adhere to no-SVG constraint. Designed to support the thematic application structure.
+        -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 300px;
+            max-height: 400px;
+        }
+        @media (min-width: 768px) {
+            .chart-container {
+                height: 350px;
+                 max-height: 450px;
+            }
+        }
+        .nav-link {
+            transition: color 0.3s ease, border-bottom-color 0.3s ease;
+        }
+        .nav-link:hover, .nav-link.active {
+            color: #0D9488; /* teal-600 */
+            border-bottom-color: #0D9488; /* teal-600 */
+        }
+        .tab-button.active {
+            background-color: #0D9488; /* teal-600 */
+            color: white;
+        }
+        .accordion-button.active {
+            background-color: #0F766E; /* teal-700 */
+        }
+        .card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+        }
+        .html-diagram {
+            border: 1px solid #D4D4D8; /* stone-300 */
+            padding: 1rem;
+            border-radius: 0.5rem;
+            background-color: #F5F5F4; /* stone-100 */
+            text-align: center;
+        }
+        .html-diagram-box {
+            background-color: white;
+            border: 1px solid #A8A29E; /* stone-400 */
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            margin: 0.5rem;
+            display: inline-block;
+        }
+        .html-diagram-arrow {
+            font-size: 1.5rem;
+            color: #57534E; /* stone-500 */
+            margin: 0 0.5rem;
+        }
+    </style>
+</head>
+<body class="bg-amber-50 text-slate-700">
+
+    <header class="bg-white shadow-md sticky top-0 z-50">
+        <nav class="container mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex items-center justify-between h-16">
+                <div class="flex items-center">
+                    <span class="font-bold text-xl text-teal-700">Distributed Caching Guide</span>
+                </div>
+                <div class="hidden md:block">
+                    <div class="ml-10 flex items-baseline space-x-4">
+                        <a href="#core-concepts" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-slate-700 border-b-2 border-transparent">Core Concepts</a>
+                        <a href="#design-interview" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-slate-700 border-b-2 border-transparent">Design Interview</a>
+                        <a href="#architectures" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-slate-700 border-b-2 border-transparent">Architectures</a>
+                        <a href="#advanced-topics" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-slate-700 border-b-2 border-transparent">Advanced Topics</a>
+                        <a href="#conclusion" class="nav-link px-3 py-2 rounded-md text-sm font-medium text-slate-700 border-b-2 border-transparent">Conclusion</a>
+                    </div>
+                </div>
+                <div class="md:hidden">
+                    <button id="mobile-menu-button" class="text-slate-700 hover:text-teal-600 focus:outline-none">
+                        <svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7" />
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </nav>
+        <div id="mobile-menu" class="md:hidden hidden bg-white shadow-lg">
+            <a href="#core-concepts" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:bg-amber-100 hover:text-teal-600">Core Concepts</a>
+            <a href="#design-interview" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:bg-amber-100 hover:text-teal-600">Design Interview</a>
+            <a href="#architectures" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:bg-amber-100 hover:text-teal-600">Architectures</a>
+            <a href="#advanced-topics" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:bg-amber-100 hover:text-teal-600">Advanced Topics</a>
+            <a href="#conclusion" class="block px-3 py-2 rounded-md text-base font-medium text-slate-700 hover:bg-amber-100 hover:text-teal-600">Conclusion</a>
+        </div>
+    </header>
+
+    <main class="container mx-auto px-4 sm:px-6 lg:px-8 py-8">
+
+        <section id="core-concepts" class="py-12">
+            <h2 class="text-3xl font-bold text-slate-900 mb-6">Core Concepts of Distributed Caching</h2>
+            <p class="mb-8 text-lg text-slate-600">This section introduces the fundamental ideas behind distributed caching. We'll explore what it is, its key advantages, the essential mechanisms that make it work, the critical CAP theorem trade-off, and common scenarios where distributed caching shines. Understanding these basics is crucial before diving into more complex design and technology choices.</p>
+
+            <div class="grid md:grid-cols-2 gap-8 mb-12">
+                <div class="bg-white p-6 rounded-lg shadow-lg card">
+                    <h3 class="text-2xl font-semibold text-teal-700 mb-3">What is a Distributed Cache?</h3>
+                    <p class="mb-4">A distributed cache pools Random Access Memory (RAM) from multiple networked computers into a single, fast in-memory data store. It significantly reduces database load and accelerates application response times by serving frequently accessed data directly from this shared memory, instead of relying on slower disk-based primary storage systems.</p>
+                    <div class="html-diagram">
+                        <span class="html-diagram-box">App ↔️</span>
+                        <span class="html-diagram-arrow">⚡</span>
+                        <span class="html-diagram-box">🚀 Distributed Cache (RAM Pool)</span>
+                        <span class="html-diagram-arrow">🐢</span>
+                        <span class="html-diagram-box">🐌 Database (Disk)</span>
+                        <p class="mt-2 text-sm text-slate-500">Apps access data much faster from the distributed cache.</p>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-lg shadow-lg card">
+                    <h3 class="text-2xl font-semibold text-teal-700 mb-3">Key Benefits</h3>
+                    <ul class="space-y-3">
+                        <li class="flex items-start"><span class="text-teal-600 mr-2 text-xl">⏱️</span> <strong>Performance:</strong> Sub-millisecond data retrieval by avoiding slow disk I/O.</li>
+                        <li class="flex items-start"><span class="text-teal-600 mr-2 text-xl">📈</span> <strong>Scalability:</strong> Horizontally scale by adding more nodes to handle growing load.</li>
+                        <li class="flex items-start"><span class="text-teal-600 mr-2 text-xl">💰</span> <strong>Cost Reduction:</strong> Lessens load on backend databases, reducing infrastructure costs.</li>
+                        <li class="flex items-start"><span class="text-teal-600 mr-2 text-xl">🛡️</span> <strong>High Availability:</strong> Data replication ensures service continuity despite node failures.</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="mb-12">
+                <h3 class="text-2xl font-semibold text-slate-900 mb-4">Fundamental Mechanisms</h3>
+                <div class="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div class="bg-white p-6 rounded-lg shadow-lg card mechanism-card cursor-pointer" data-mechanism="partitioning">
+                        <h4 class="text-xl font-semibold text-teal-700 mb-2">Data Partitioning (Sharding)</h4>
+                        <p class="text-sm">Splitting data across nodes. Consistent Hashing minimizes reshuffle on scaling. Click to learn more.</p>
+                        <div class="mechanism-details hidden mt-4 p-4 bg-amber-50 rounded">
+                            <p class="text-sm font-medium">Consistent Hashing maps keys to nodes on a logical ring, reducing data movement when nodes are added/removed.</p>
+                            <div class="html-diagram mt-2">
+                                <span class="html-diagram-box">Key1</span> <span class="html-diagram-arrow">➔</span> <span class="html-diagram-box">Node A</span><br/>
+                                <span class="html-diagram-box">Key2</span> <span class="html-diagram-arrow">➔</span> <span class="html-diagram-box">Node B</span>
+                                <p class="text-xs mt-1">Imagine a ring where keys find their closest node.</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-lg card mechanism-card cursor-pointer" data-mechanism="replication">
+                        <h4 class="text-xl font-semibold text-teal-700 mb-2">Data Replication</h4>
+                        <p class="text-sm">Copying data to multiple nodes for fault tolerance and availability. Click to learn more.</p>
+                        <div class="mechanism-details hidden mt-4 p-4 bg-amber-50 rounded">
+                            <p class="text-sm font-medium">If a primary node fails, its replica can take over. Synchronous (strong consistency, slower writes) vs. Asynchronous (eventual consistency, faster writes).</p>
+                             <div class="html-diagram mt-2">
+                                <span class="html-diagram-box">Primary</span> <span class="html-diagram-arrow">➔</span> <span class="html-diagram-box">Replica 1</span>, <span class="html-diagram-box">Replica 2</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-lg card mechanism-card cursor-pointer" data-mechanism="eviction">
+                        <h4 class="text-xl font-semibold text-teal-700 mb-2">Cache Eviction Policies</h4>
+                        <p class="text-sm">Deciding which items to remove when cache is full (LRU, LFU, TTL, FIFO). Click to learn more.</p>
+                        <div class="mechanism-details hidden mt-4 p-4 bg-amber-50 rounded">
+                            <ul class="text-sm space-y-1">
+                                <li><strong>LRU:</strong> Least Recently Used</li>
+                                <li><strong>LFU:</strong> Least Frequently Used</li>
+                                <li><strong>TTL:</strong> Time-To-Live (auto-expire)</li>
+                                <li><strong>FIFO:</strong> First-In, First-Out</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-lg card mechanism-card cursor-pointer" data-mechanism="patterns">
+                        <h4 class="text-xl font-semibold text-teal-700 mb-2">Caching Patterns</h4>
+                        <p class="text-sm">How applications interact with the cache (Cache-Aside, Read-Through, Write-Through, Write-Back). Click to learn more.</p>
+                        <div class="mechanism-details hidden mt-4 p-4 bg-amber-50 rounded">
+                             <p class="text-sm font-medium"><strong>Cache-Aside:</strong> App manages cache. Check cache -> On miss, DB -> Store in cache.</p>
+                             <p class="text-sm font-medium mt-1"><strong>Read-Through:</strong> Cache manages DB fetch on miss.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid md:grid-cols-2 gap-8 mb-12">
+                <div class="bg-white p-6 rounded-lg shadow-lg card">
+                    <h3 class="text-2xl font-semibold text-teal-700 mb-3">CAP Theorem</h3>
+                    <p class="mb-4">A distributed system can only simultaneously guarantee two of these three during a network partition: Consistency (C), Availability (A), Partition Tolerance (P). Since P is a must, caches often trade C for A (Eventual Consistency).</p>
+                    <div class="html-diagram">
+                        <div class="font-bold text-lg">C <span class="text-stone-400 mx-1">-</span> A <span class="text-stone-400 mx-1">-</span> P</div>
+                        <div class="flex justify-around mt-2 text-sm">
+                            <div><strong>C</strong>onsistency</div>
+                            <div><strong>A</strong>vailability</div>
+                            <div><strong>P</strong>artition Tolerance</div>
+                        </div>
+                        <p class="mt-2 text-xs text-slate-500">Pick 2 when network partitions occur. Usually AP or CP.</p>
+                    </div>
+                </div>
+                 <div class="bg-white p-6 rounded-lg shadow-lg card">
+                    <h3 class="text-2xl font-semibold text-teal-700 mb-3">Common Use Cases</h3>
+                    <ul class="space-y-3">
+                        <li class="flex items-start"><span class="text-teal-600 mr-2 text-xl">🚀</span> Application Acceleration</li>
+                        <li class="flex items-start"><span class="text-teal-600 mr-2 text-xl">💾</span> Database Query Caching</li>
+                        <li class="flex items-start"><span class="text-teal-600 mr-2 text-xl">👤</span> Web Session Management</li>
+                        <li class="flex items-start"><span class="text-teal-600 mr-2 text-xl">📡</span> API Response Caching</li>
+                        <li class="flex items-start"><span class="text-teal-600 mr-2 text-xl">🎮</span> Real-Time Applications (Leaderboards)</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section id="design-interview" class="py-12 bg-white rounded-lg shadow-xl my-8 p-6 md:p-8">
+            <h2 class="text-3xl font-bold text-slate-900 mb-6">Distributed Cache Design: Interview Focus</h2>
+            <p class="mb-8 text-lg text-slate-600">Designing a distributed cache is a classic system design interview question. This section breaks down how to approach it, covering the typical problem statement, core requirements to consider, key discussion points, and potential follow-up questions. The aim is to demonstrate a structured thought process and an understanding of the trade-offs involved.</p>
+
+            <div class="space-y-6">
+                <div>
+                    <button class="accordion-button w-full text-left bg-teal-600 text-white p-4 rounded-md hover:bg-teal-700 transition focus:outline-none text-xl font-semibold">
+                        The Interview Challenge
+                    </button>
+                    <div class="accordion-content hidden p-4 border border-t-0 border-stone-300 rounded-b-md bg-amber-50">
+                        <h4 class="font-semibold text-slate-800 mb-2">Problem Statement Example:</h4>
+                        <p class="italic mb-3">"Design a high-performance, scalable, and fault-tolerant distributed caching system for various internal services to reduce latency and improve responsiveness."</p>
+                        <h4 class="font-semibold text-slate-800 mb-1">Functional Requirements:</h4>
+                        <ul class="list-disc list-inside text-sm space-y-1 mb-2">
+                            <li><code>Put(key, value, ttl)</code></li>
+                            <li><code>Get(key)</code></li>
+                            <li><code>Delete(key)</code></li>
+                            <li>Support various data sizes</li>
+                            <li>Eviction policies (LRU, TTL etc.)</li>
+                        </ul>
+                        <h4 class="font-semibold text-slate-800 mb-1">Non-Functional Requirements:</h4>
+                        <ul class="list-disc list-inside text-sm space-y-1">
+                            <li>Low Latency (sub-millisecond hits)</li>
+                            <li>High Availability</li>
+                            <li>Scalability (millions RPS, TBs data)</li>
+                            <li>Tunable Consistency</li>
+                            <li>Fault Tolerance (K node failures)</li>
+                            <li>Security</li>
+                            <li>(Optional) Durability</li>
+                        </ul>
+                    </div>
+                </div>
+
+                <div>
+                    <button class="accordion-button w-full text-left bg-teal-600 text-white p-4 rounded-md hover:bg-teal-700 transition focus:outline-none text-xl font-semibold">
+                        Navigating the Design: Candidate's Approach
+                    </button>
+                    <div class="accordion-content hidden p-4 border border-t-0 border-stone-300 rounded-b-md bg-amber-50">
+                        <ol class="list-decimal list-inside space-y-3">
+                            <li><strong>Clarifying Questions & Scope:</strong> Read/write ratios? Object sizes? Dataset size? Consistency needs? Target latency? Peak load? Persistence? Security constraints?</li>
+                            <li><strong>High-Level Design & Components:</strong>
+                                <ul class="list-disc list-inside ml-4 text-sm">
+                                    <li>Client Library/SDK</li>
+                                    <li>Cache Nodes/Servers</li>
+                                    <li>Cluster Management Service (Coordinator)</li>
+                                    <li>Data Partitioning Layer</li>
+                                    <li>Replication Layer</li>
+                                </ul>
+                                <div class="html-diagram my-2">
+                                    <span class="html-diagram-box">Client App + SDK</span> <span class="html-diagram-arrow">↔️</span>
+                                    <span class="html-diagram-box">Coordinator</span> <span class="html-diagram-arrow">↕️</span>
+                                    <span class="html-diagram-box">Cache Node Cluster</span>
+                                </div>
+                            </li>
+                            <li><strong>Deep Dive into Core Mechanisms:</strong> Consistent Hashing, Replication (Sync/Async), Consistency (CAP/PACELC), Fault Tolerance, Cache Coherency.</li>
+                            <li><strong>Addressing Trade-offs:</strong> Consistency vs. Availability, Write vs. Read Perf, Memory vs. Hit Ratio, Thundering Herd, Hotspots.</li>
+                        </ol>
+                    </div>
+                </div>
+                 <div>
+                    <button class="accordion-button w-full text-left bg-teal-600 text-white p-4 rounded-md hover:bg-teal-700 transition focus:outline-none text-xl font-semibold">
+                        Key Discussion Areas & Follow-ups
+                    </button>
+                    <div class="accordion-content hidden p-4 border border-t-0 border-stone-300 rounded-b-md bg-amber-50">
+                        <h4 class="font-semibold text-slate-800 mb-1">Key Discussion Points:</h4>
+                        <ul class="list-disc list-inside text-sm space-y-1 mb-2">
+                            <li>Capacity Estimation</li>
+                            <li>API Design (REST, gRPC)</li>
+                            <li>Data Partitioning (Consistent Hashing details)</li>
+                            <li>Replication Strategy (Primary-Backup, Quorum)</li>
+                            <li>Consistency Model (Eventual vs. Strong)</li>
+                            <li>Eviction Policies (LRU, LFU, TTL, FIFO details)</li>
+                            <li>Cache Coherency (Invalidation techniques)</li>
+                            <li>Handling Node Failures & Hotspots</li>
+                            <li>Monitoring & Metrics</li>
+                        </ul>
+                         <h4 class="font-semibold text-slate-800 mb-1">Potential Follow-up Questions:</h4>
+                        <ul class="list-disc list-inside text-sm space-y-1">
+                            <li>Cross-Datacenter Replication</li>
+                            <li>Security (Encryption, AuthN/AuthZ)</li>
+                            <li>Cache Warming Strategies</li>
+                            <li>Multi-Tenancy Considerations</li>
+                            <li>Advanced Eviction Policies (e.g., ARC)</li>
+                            <li>Specific Monitoring Metrics & Alerting</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="architectures" class="py-12">
+            <h2 class="text-3xl font-bold text-slate-900 mb-6">Architectures & Technologies</h2>
+            <p class="mb-8 text-lg text-slate-600">This section explores different ways distributed caches can be deployed and compares popular caching products. We'll look at client-side, server-side, and embedded architectures, then dive into technologies like Memcached, Redis, and In-Memory Data Grids (IMDGs) like Hazelcast and Apache Ignite. Finally, we'll touch upon managed cloud caching services.</p>
+
+            <div class="mb-12">
+                <h3 class="text-2xl font-semibold text-slate-900 mb-4">Cache Deployment Architectures</h3>
+                <div class="flex border-b border-stone-300 mb-4">
+                    <button class="tab-button py-2 px-4 text-slate-600 hover:text-teal-600 focus:outline-none active" data-tab="client-side">Client-Side</button>
+                    <button class="tab-button py-2 px-4 text-slate-600 hover:text-teal-600 focus:outline-none" data-tab="server-side">Server-Side</button>
+                    <button class="tab-button py-2 px-4 text-slate-600 hover:text-teal-600 focus:outline-none" data-tab="embedded">Embedded</button>
+                </div>
+                <div id="tab-content" class="p-4 bg-white rounded-lg shadow">
+                    <div id="client-side-content" class="tab-pane">
+                        <h4 class="text-xl font-semibold text-teal-700 mb-2">Client-Side Caching (incl. Near Caches)</h4>
+                        <p>Data cached locally to the application (in-process or same machine). Near caches are client-side extensions of a distributed cache.</p>
+                        <p class="font-medium mt-2">Pros:</p> <ul class="list-disc list-inside text-sm"><li>Extremely low latency.</li><li>Reduced load on distributed cache/network.</li></ul>
+                        <p class="font-medium mt-1">Cons:</p> <ul class="list-disc list-inside text-sm"><li>Increased client memory usage.</li><li>Cache coherency is complex.</li><li>Limited cache size.</li></ul>
+                    </div>
+                    <div id="server-side-content" class="tab-pane hidden">
+                        <h4 class="text-xl font-semibold text-teal-700 mb-2">Server-Side Caching</h4>
+                        <p>Cache is external to application instances. Can be Centralized (single server/pair) or Distributed (peer-to-peer cluster).</p>
+                        <p class="font-medium mt-2">Centralized Pros/Cons:</p> <ul class="list-disc list-inside text-sm"><li>Simpler / Single point of failure, bottleneck.</li></ul>
+                        <p class="font-medium mt-1">Distributed Pros/Cons:</p> <ul class="list-disc list-inside text-sm"><li>Scalable, HA / More complex, consistency challenges.</li></ul>
+                    </div>
+                    <div id="embedded-content" class="tab-pane hidden">
+                        <h4 class="text-xl font-semibold text-teal-700 mb-2">Embedded Distributed Caches</h4>
+                        <p>Cache member runs within the application process. App instances form a cluster.</p>
+                        <p class="font-medium mt-2">Pros:</p> <ul class="list-disc list-inside text-sm"><li>Low latency (if local data).</li><li>Simplified initial deployment.</li></ul>
+                        <p class="font-medium mt-1">Cons:</p> <ul class="list-disc list-inside text-sm"><li>Resource contention with app.</li><li>Tied scalability.</li></ul>
+                    </div>
+                </div>
+                <div class="mt-6 chart-container bg-white p-4 rounded-lg shadow">
+                    <canvas id="deploymentArchChart"></canvas>
+                </div>
+            </div>
+
+            <div class="mb-12">
+                <h3 class="text-2xl font-semibold text-slate-900 mb-4">Popular Caching Products</h3>
+                 <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div class="bg-white p-6 rounded-lg shadow-lg card product-card" data-product="memcached">
+                        <h4 class="text-xl font-semibold text-teal-700">Memcached</h4>
+                        <p class="text-sm">Simple, fast key-value store. Client-side sharding. Often used with proxies (mcrouter, Twemproxy).</p>
+                    </div>
+                     <div class="bg-white p-6 rounded-lg shadow-lg card product-card" data-product="redis">
+                        <h4 class="text-xl font-semibold text-teal-700">Redis</h4>
+                        <p class="text-sm">Versatile in-memory data structure store. Supports persistence, clustering (Redis Cluster), HA (Sentinel).</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-lg card product-card" data-product="hazelcast">
+                        <h4 class="text-xl font-semibold text-teal-700">Hazelcast (IMDG)</h4>
+                        <p class="text-sm">Peer-to-peer IMDG. Embedded & Client/Server. AP/CP consistency models. Near Cache.</p>
+                    </div>
+                     <div class="bg-white p-6 rounded-lg shadow-lg card product-card" data-product="ignite">
+                        <h4 class="text-xl font-semibold text-teal-700">Apache Ignite (IMDG)</h4>
+                        <p class="text-sm">Distributed DB, caching, compute. Partitioned/Replicated. ACID transactions. Raft in 3.0.</p>
+                    </div>
+                </div>
+                <div class="mt-6 chart-container bg-white p-4 rounded-lg shadow">
+                     <canvas id="productFeaturesChart"></canvas>
+                </div>
+            </div>
+
+            <div>
+                <h3 class="text-2xl font-semibold text-slate-900 mb-4">Managed Cloud Caching Services</h3>
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div class="bg-white p-6 rounded-lg shadow-lg card">
+                        <h4 class="text-xl font-semibold text-teal-700">Amazon ElastiCache</h4>
+                        <p class="text-sm">Managed Redis & Memcached. Automates setup, patching, HA. Serverless option.</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-lg card">
+                        <h4 class="text-xl font-semibold text-teal-700">Google Cloud Memorystore</h4>
+                        <p class="text-sm">Managed Redis & Memcached. Basic/Standard/Cluster tiers for Redis. Auto Discovery for Memcached.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="advanced-topics" class="py-12 bg-white rounded-lg shadow-xl my-8 p-6 md:p-8">
+            <h2 class="text-3xl font-bold text-slate-900 mb-6">Advanced Topics in Distributed Caching</h2>
+            <p class="mb-8 text-lg text-slate-600">This section delves into more complex aspects of distributed caching. We will explore data consistency models in greater depth, including consensus algorithms and quorum systems. We'll also look at sophisticated cache coherency strategies beyond simple TTLs, crucial security considerations, and best practices for monitoring and observability to ensure a robust and performant caching layer.</p>
+
+            <div class="space-y-8">
+                <div>
+                    <h3 class="text-2xl font-semibold text-slate-800 mb-3">Data Consistency Deep Dive</h3>
+                    <div class="space-y-4">
+                        <div>
+                            <button class="accordion-button w-full text-left bg-teal-600 text-white p-3 rounded-md hover:bg-teal-700 transition focus:outline-none text-lg font-semibold">
+                                Consistency Models (Strong, Eventual, etc.)
+                            </button>
+                            <div class="accordion-content hidden p-3 border border-t-0 border-stone-300 rounded-b-md bg-amber-50">
+                                <ul class="list-disc list-inside text-sm space-y-1">
+                                    <li><strong>Strong (Linearizability):</strong> Reads see most recent write. High latency.</li>
+                                    <li><strong>Sequential:</strong> Global order, client's ops in order.</li>
+                                    <li><strong>Causal:</strong> Causally related ops seen in order.</li>
+                                    <li><strong>Eventual:</strong> Eventually all reads see last update. Prioritizes availability. (Common in caches)
+                                        <ul class="list-circle list-inside ml-4">
+                                            <li>Read Your Writes, Monotonic Reads/Writes (Session guarantees)</li>
+                                        </ul>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
+                        <div>
+                            <button class="accordion-button w-full text-left bg-teal-600 text-white p-3 rounded-md hover:bg-teal-700 transition focus:outline-none text-lg font-semibold">
+                                Consensus Algorithms (Paxos, Raft)
+                            </button>
+                            <div class="accordion-content hidden p-3 border border-t-0 border-stone-300 rounded-b-md bg-amber-50">
+                                <p class="text-sm">Used for agreement on critical metadata, leader election, strong consistency for specific data structures (e.g., Hazelcast CP, Ignite 3.0). Not for every cache op due to overhead.</p>
+                                <p class="text-sm mt-1"><strong>Raft:</strong> Emphasizes understandability (leader election, log replication, safety).</p>
+                            </div>
+                        </div>
+                        <div>
+                            <h4 class="text-xl font-semibold text-teal-700 mb-2">NRW Quorum Systems</h4>
+                            <p class="text-sm mb-2">Configurable consistency: N=replicas, R=read quorum, W=write quorum. Strong if R+W > N.</p>
+                            <div class="bg-amber-100 p-4 rounded-md">
+                                <div class="grid grid-cols-3 gap-2 mb-2">
+                                    <div><label for="nVal" class="block text-xs font-medium">N (Replicas):</label><input type="number" id="nVal" value="3" min="1" class="w-full p-1 border border-stone-300 rounded-md text-sm"></div>
+                                    <div><label for="rVal" class="block text-xs font-medium">R (Read Quorum):</label><input type="number" id="rVal" value="2" min="1" class="w-full p-1 border border-stone-300 rounded-md text-sm"></div>
+                                    <div><label for="wVal" class="block text-xs font-medium">W (Write Quorum):</label><input type="number" id="wVal" value="2" min="1" class="w-full p-1 border border-stone-300 rounded-md text-sm"></div>
+                                </div>
+                                <button id="nrwButton" class="bg-teal-500 hover:bg-teal-600 text-white text-sm py-1 px-3 rounded-md">Analyze</button>
+                                <div id="nrwResult" class="mt-2 text-sm font-medium text-slate-700"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 class="text-2xl font-semibold text-slate-800 mb-3">Cache Coherency Strategies</h3>
+                    <p class="text-sm mb-2">Beyond simple TTLs, event-driven approaches keep caches fresh:</p>
+                    <div class="grid md:grid-cols-2 gap-4">
+                        <div class="bg-amber-50 p-4 rounded-lg border border-stone-200">
+                            <h4 class="font-semibold text-teal-700">Event Sourcing (ES)</h4>
+                            <p class="text-xs">All state changes are a sequence of events. Cache consumes events to build materialized views.</p>
+                            <div class="html-diagram mt-1 text-xs">
+                                App Write ➔ Event Store ➔ Event Stream ➔ Cache Update
+                            </div>
+                        </div>
+                        <div class="bg-amber-50 p-4 rounded-lg border border-stone-200">
+                            <h4 class="font-semibold text-teal-700">Change Data Capture (CDC)</h4>
+                            <p class="text-xs">Capture DB transaction log changes. Cache subscribes to invalidate/update entries.</p>
+                             <div class="html-diagram mt-1 text-xs">
+                                DB Change ➔ Tx Log ➔ CDC Stream ➔ Cache Invalidate/Update
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid md:grid-cols-2 gap-8">
+                    <div>
+                        <h3 class="text-2xl font-semibold text-slate-800 mb-3">Security Considerations</h3>
+                        <ul class="space-y-2 text-sm">
+                            <li class="flex items-start"><span class="text-teal-600 mr-2 text-lg">🔒</span> <strong>Encryption:</strong> In transit (TLS/SSL) and at rest (if persisted).</li>
+                            <li class="flex items-start"><span class="text-teal-600 mr-2 text-lg">🛡️</span> <strong>Network Access Control:</strong> VPCs, firewalls, security groups.</li>
+                            <li class="flex items-start"><span class="text-teal-600 mr-2 text-lg">🔑</span> <strong>Authentication & Authorization:</strong> Passwords, tokens, RBAC.</li>
+                            <li class="flex items-start"><span class="text-teal-600 mr-2 text-lg">📜</span> <strong>Compliance:</strong> GDPR, HIPAA, PCI DSS considerations.</li>
+                            <li class="flex items-start"><span class="text-teal-600 mr-2 text-lg">✍️</span> <strong>Audit Logging:</strong> Record access and administrative changes.</li>
+                        </ul>
+                    </div>
+                    <div>
+                        <h3 class="text-2xl font-semibold text-slate-800 mb-3">Monitoring & Observability</h3>
+                        <p class="text-sm mb-2">Key metrics to track cache health and performance:</p>
+                        <ul class="space-y-1 text-sm">
+                            <li>🎯 Cache Hit/Miss Ratio</li>
+                            <li>⏱️ Latency (p50, p90, p99)</li>
+                            <li>📈 Throughput (RPS)</li>
+                            <li>💾 Memory Usage & Eviction Rate</li>
+                            <li>⚙️ CPU & Network Utilization</li>
+                            <li>❌ Error Rates & Replication Lag</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="conclusion" class="py-12">
+            <h2 class="text-3xl font-bold text-slate-900 mb-6">Conclusion</h2>
+            <p class="text-lg text-slate-600 mb-4">Distributed caching is a vital technology for building high-performance, scalable, and resilient applications. It reduces latency, improves throughput, and lessens the load on backend systems by serving frequently accessed data from fast in-memory stores.</p>
+            <p class="text-lg text-slate-600 mb-4">Effective design involves understanding core concepts like data partitioning, replication, eviction, and consistency trade-offs (CAP/PACELC). Choosing the right deployment architecture (client-side, server-side, embedded) and technology (Memcached, Redis, IMDGs like Hazelcast/Ignite, or managed cloud services) depends on specific application needs.</p>
+            <p class="text-lg text-slate-600">Advanced topics like sophisticated coherency strategies, robust security, and comprehensive monitoring are crucial for success at scale. Mastering these elements allows organizations to leverage distributed caching to deliver exceptional user experiences in today's demanding digital landscape.</p>
+        </section>
+    </main>
+
+    <footer class="bg-slate-800 text-amber-50 py-8 text-center">
+        <p>&copy; 2024 Interactive Distributed Caching Guide. Based on "Mastering Distributed Caching" report.</p>
+    </footer>
+
+    <script>
+        // Mobile menu toggle
+        const mobileMenuButton = document.getElementById('mobile-menu-button');
+        const mobileMenu = document.getElementById('mobile-menu');
+        if (mobileMenuButton && mobileMenu) {
+            mobileMenuButton.addEventListener('click', () => {
+                mobileMenu.classList.toggle('hidden');
+            });
+        }
+
+        // Smooth scrolling for nav links and close mobile menu on click
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const targetId = this.getAttribute('href');
+                const targetElement = document.querySelector(targetId);
+                if (targetElement) {
+                    targetElement.scrollIntoView({ behavior: 'smooth' });
+                }
+                if (mobileMenu && !mobileMenu.classList.contains('hidden')) {
+                    mobileMenu.classList.add('hidden');
+                }
+            });
+        });
+        
+        // Active nav link highlighting on scroll
+        const sections = document.querySelectorAll('section');
+        const navLinks = document.querySelectorAll('header nav a');
+        const mobileNavLinks = document.querySelectorAll('#mobile-menu a');
+
+        function changeLinkState() {
+            let index = sections.length;
+            while(--index && window.scrollY + 100 < sections[index].offsetTop) {}
+            
+            navLinks.forEach((link) => link.classList.remove('active'));
+            mobileNavLinks.forEach((link) => link.classList.remove('bg-amber-100', 'text-teal-600')); // Reset mobile active style
+
+            if (navLinks[index]) {
+                 navLinks[index].classList.add('active');
+            }
+            if (mobileNavLinks[index]) {
+                mobileNavLinks[index].classList.add('bg-amber-100', 'text-teal-600');
+            }
+        }
+        changeLinkState(); // Initial call
+        window.addEventListener('scroll', changeLinkState);
+
+
+        // Mechanism cards toggle
+        const mechanismCards = document.querySelectorAll('.mechanism-card');
+        mechanismCards.forEach(card => {
+            card.addEventListener('click', () => {
+                const details = card.querySelector('.mechanism-details');
+                if (details) {
+                    details.classList.toggle('hidden');
+                }
+            });
+        });
+
+        // Accordion toggle
+        const accordionButtons = document.querySelectorAll('.accordion-button');
+        accordionButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                const content = button.nextElementSibling;
+                if (content) {
+                    content.classList.toggle('hidden');
+                    button.classList.toggle('active');
+                }
+            });
+        });
+
+        // Tab functionality
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const tabPanes = document.querySelectorAll('.tab-pane');
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                tabButtons.forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+
+                const targetTab = button.getAttribute('data-tab');
+                tabPanes.forEach(pane => {
+                    if (pane.id === `${targetTab}-content`) {
+                        pane.classList.remove('hidden');
+                    } else {
+                        pane.classList.add('hidden');
+                    }
+                });
+            });
+        });
+        
+        // Function to wrap text for chart labels
+        function wrapText(str, maxWidth) {
+            const words = str.split(' ');
+            let lines = [];
+            let currentLine = words[0];
+
+            for (let i = 1; i < words.length; i++) {
+                if (currentLine.length + words[i].length + 1 < maxWidth) {
+                    currentLine += ' ' + words[i];
+                } else {
+                    lines.push(currentLine);
+                    currentLine = words[i];
+                }
+            }
+            lines.push(currentLine);
+            return lines;
+        }
+
+        // Chart.js: Deployment Architecture Comparison
+        const depArchCtx = document.getElementById('deploymentArchChart');
+        if (depArchCtx) {
+            new Chart(depArchCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Client-Side (Near)', 'Server-Side (Central)', 'Server-Side (Distr.)', 'Embedded Distr.', 'Sidecar (K8s)'].map(label => wrapText(label,10)),
+                    datasets: [
+                        {
+                            label: 'Typical Latency (Lower is better)',
+                            data: [1, 3, 3, 1.5, 1.5], // Normalized: 1=V.Low, 2=Low, 3=Medium
+                            backgroundColor: 'rgba(13, 148, 136, 0.7)', // teal-600
+                            borderColor: 'rgba(13, 148, 136, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Scalability (Higher is better)',
+                            data: [1, 1, 5, 3, 3], // Normalized: 1=Limited, 3=App-tied, 5=High
+                            backgroundColor: 'rgba(245, 158, 11, 0.7)', // amber-500
+                            borderColor: 'rgba(245, 158, 11, 1)',
+                            borderWidth: 1
+                        },
+                         {
+                            label: 'Coherency Complexity (Higher is more complex)',
+                            data: [5, 2, 4, 4.5, 4], // Normalized: 1=Low, 3=Medium, 5=V.High
+                            backgroundColor: 'rgba(120, 113, 108, 0.7)', // stone-500
+                            borderColor: 'rgba(120, 113, 108, 1)',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, ticks: { font: { size: 10 } } },
+                        x: { ticks: { font: { size: 10 } } }
+                    },
+                    plugins: { legend: { labels: { font: { size: 10 } } } }
+                }
+            });
+        }
+
+        // Chart.js: Product Features Comparison (Radar Chart)
+        const prodFeatCtx = document.getElementById('productFeaturesChart');
+        if (prodFeatCtx) {
+            new Chart(prodFeatCtx, {
+                type: 'radar',
+                data: {
+                    labels: ['Data Model Richness', 'Partitioning Sophistication', 'Replication Robustness', 'Built-in HA', 'Persistence Options', 'Server-Side Compute'],
+                    datasets: [
+                        {
+                            label: 'Memcached (w/ Proxy)',
+                            data: [2, 3, 2, 1, 1, 1], // Scaled 1-5
+                            backgroundColor: 'rgba(239, 68, 68, 0.2)', // red-500
+                            borderColor: 'rgba(239, 68, 68, 1)',
+                            pointBackgroundColor: 'rgba(239, 68, 68, 1)'
+                        },
+                        {
+                            label: 'Redis Cluster',
+                            data: [4, 4, 3, 4, 4, 3], // Scaled 1-5
+                            backgroundColor: 'rgba(13, 148, 136, 0.2)', // teal-600
+                            borderColor: 'rgba(13, 148, 136, 1)',
+                            pointBackgroundColor: 'rgba(13, 148, 136, 1)'
+                        },
+                        {
+                            label: 'Hazelcast',
+                            data: [4, 4, 4, 5, 3, 5], // Scaled 1-5
+                            backgroundColor: 'rgba(245, 158, 11, 0.2)', // amber-500
+                            borderColor: 'rgba(245, 158, 11, 1)',
+                            pointBackgroundColor: 'rgba(245, 158, 11, 1)'
+                        },
+                        {
+                            label: 'Apache Ignite',
+                            data: [5, 5, 5, 5, 5, 5], // Scaled 1-5
+                            backgroundColor: 'rgba(59, 130, 246, 0.2)', // blue-500
+                            borderColor: 'rgba(59, 130, 246, 1)',
+                            pointBackgroundColor: 'rgba(59, 130, 246, 1)'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: {
+                            angleLines: { display: true },
+                            suggestedMin: 0,
+                            suggestedMax: 5,
+                            ticks: { stepSize: 1, font: {size: 8}},
+                            pointLabels: { font: { size: 9 } }
+                        }
+                    },
+                    plugins: { legend: { labels: { font: { size: 10 }}}}
+                }
+            });
+        }
+
+        // NRW Quorum Analyzer
+        const nVal = document.getElementById('nVal');
+        const rVal = document.getElementById('rVal');
+        const wVal = document.getElementById('wVal');
+        const nrwButton = document.getElementById('nrwButton');
+        const nrwResult = document.getElementById('nrwResult');
+
+        if (nrwButton) {
+            nrwButton.addEventListener('click', () => {
+                const n = parseInt(nVal.value);
+                const r = parseInt(rVal.value);
+                const w = parseInt(wVal.value);
+                let resultText = "";
+
+                if (isNaN(n) || isNaN(r) || isNaN(w) || n < 1 || r < 1 || w < 1 || r > n || w > n) {
+                    resultText = "Invalid input. Ensure R and W are <= N, and all are >= 1.";
+                } else {
+                    if (r + w > n) {
+                        resultText = `Strong Consistency (R+W=${r+w} > N=${n}). Reads will see the latest committed write.`;
+                    } else {
+                        resultText = `Eventual Consistency (R+W=${r+w} <= N=${n}). Stale reads are possible.`;
+                    }
+                    if (w === n) resultText += " Very strong write durability.";
+                    if (r === n) resultText += " Reads are guaranteed latest but may be slow/less available.";
+                    if (r === 1 && w === 1 && n > 1) resultText += " Optimized for availability/low latency, but only eventual consistency.";
+                }
+                nrwResult.textContent = resultText;
+            });
+        }
+
+    </script>
+</body>
+</html>

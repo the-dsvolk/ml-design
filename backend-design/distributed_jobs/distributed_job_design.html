@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive Distributed Job Scheduler Design</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Visualization & Content Choices: 
+        - Report Info: Core Goals/Use Cases -> Goal: Inform -> Viz: Interactive cards -> Interaction: Click to expand -> Justification: Clear, concise. -> Library: HTML/CSS/JS.
+        - Report Info: Functional/Non-Functional Requirements -> Goal: Inform/Organize -> Viz: Expandable lists/cards -> Interaction: Click to reveal details -> Justification: Manages detailed info. -> Library: HTML/CSS/JS.
+        - Report Info: Capacity Estimations (e.g., 10B jobs/day) -> Goal: Inform -> Viz: Highlighted stats -> Interaction: Static display -> Justification: Emphasize key figures. -> Library: HTML/CSS.
+        - Report Info: High-Level Architecture -> Goal: Organize/Inform -> Viz: HTML/CSS diagram -> Interaction: Hover/click for component info -> Justification: Visual system overview. -> Library: HTML/CSS/JS.
+        - Report Info: Architectural Patterns Table -> Goal: Compare -> Viz: Interactive HTML table + Chart.js Bar Chart (Scalability, Fault Tolerance, Complexity) -> Interaction: Table interaction, chart updates -> Justification: Detailed & visual comparison. -> Library: HTML/JS, Chart.js.
+        - Report Info: Job Queue Technologies Table -> Goal: Compare -> Viz: Interactive HTML table + Chart.js Bar Chart (Throughput, Latency, Durability) -> Interaction: Table interaction, chart updates -> Justification: Comparative analysis. -> Library: HTML/JS, Chart.js.
+        - Report Info: Scheduling Algorithms Table -> Goal: Compare/Organize -> Viz: Interactive HTML table -> Interaction: Sort/filter -> Justification: Detailed comparison of diverse algorithms. -> Library: HTML/JS. (Chart difficult due to qualitative variance).
+        - Report Info: Consensus Protocols Table -> Goal: Compare -> Viz: HTML table -> Interaction: Static -> Justification: Direct comparison. -> Library: HTML.
+        - Report Info: Bottlenecks/Failure Scenarios -> Goal: Inform -> Viz: Interactive cards (Problem -> Solution/Mitigation) -> Interaction: Click to reveal -> Justification: Clear problem-solution. -> Library: HTML/CSS/JS.
+    -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .nav-item { transition: all 0.3s ease; }
+        .nav-item.active { background-color: #0D9488; color: white; } /* teal-600 */
+        .nav-item:hover:not(.active) { background-color: #CCFBF1; color: #134E4A; } /* teal-100 text-teal-700 */
+        .content-section { display: none; }
+        .content-section.active { display: block; }
+        .chart-container { position: relative; width: 100%; max-width: 600px; margin-left: auto; margin-right: auto; height: 350px; max-height: 400px; }
+        @media (min-width: 768px) { .chart-container { height: 400px; max-height: 500px;} }
+        .interactive-card { background-color: white; border: 1px solid #E5E7EB; border-radius: 0.5rem; padding: 1rem; margin-bottom: 1rem; cursor: pointer; transition: box-shadow 0.3s ease; }
+        .interactive-card:hover { box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+        .interactive-card h3 { font-size: 1.125rem; font-weight: 600; margin-bottom: 0.5rem; color: #115E59; } /* teal-800 */
+        .interactive-card .details { display: none; margin-top: 0.75rem; font-size: 0.9rem; color: #4B5563; }
+        .html-diagram-component { border: 2px solid #0D9488; padding: 0.75rem; margin: 0.5rem; border-radius: 0.375rem; text-align: center; background-color: #F0FDFA; } /* teal-50 */
+        .html-diagram-arrow { text-align: center; font-size: 1.5rem; color: #0D9488; margin: 0.25rem 0; }
+        table { width: 100%; border-collapse: collapse; margin-top: 1rem; }
+        th, td { border: 1px solid #D1D5DB; padding: 0.75rem; text-align: left; }
+        th { background-color: #F3F4F6; font-weight: 600; }
+        .tab-button { background-color: #F3F4F6; border: 1px solid #D1D5DB; padding: 0.5rem 1rem; margin-right: 0.5rem; border-radius: 0.375rem; cursor: pointer; }
+        .tab-button.active { background-color: #0D9488; color: white; }
+        .tab-content { display: none; margin-top: 1rem; border: 1px solid #E5E7EB; padding:1rem; border-radius: 0.25rem;}
+        .tab-content.active { display: block; }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800">
+
+    <header class="bg-teal-700 text-white p-6 shadow-md">
+        <div class="container mx-auto max-w-7xl">
+            <h1 class="text-3xl font-bold">Interactive Distributed Job Scheduler Design</h1>
+            <p class="text-sm text-teal-100">Explore the intricacies of designing a robust and scalable job scheduler.</p>
+        </div>
+    </header>
+
+    <nav class="bg-white shadow-sm sticky top-0 z-50">
+        <div class="container mx-auto max-w-7xl flex flex-wrap justify-center space-x-1 sm:space-x-2 p-3">
+            <button data-target="introduction" class="nav-item active text-sm sm:text-base px-3 py-2 rounded-md font-medium">Introduction</button>
+            <button data-target="requirements" class="nav-item text-sm sm:text-base px-3 py-2 rounded-md font-medium">Requirements</button>
+            <button data-target="architecture" class="nav-item text-sm sm:text-base px-3 py-2 rounded-md font-medium">Architecture</button>
+            <button data-target="components" class="nav-item text-sm sm:text-base px-3 py-2 rounded-md font-medium">Core Components</button>
+            <button data-target="scalability" class="nav-item text-sm sm:text-base px-3 py-2 rounded-md font-medium">Scalability</button>
+            <button data-target="fault-tolerance" class="nav-item text-sm sm:text-base px-3 py-2 rounded-md font-medium">Fault Tolerance</button>
+        </div>
+    </nav>
+
+    <main class="container mx-auto max-w-7xl p-4 sm:p-6 lg:p-8">
+        <section id="introduction" class="content-section active">
+            <h2 class="text-2xl font-semibold mb-4 text-teal-700">I. Introduction to Distributed Job Schedulers</h2>
+            <p class="mb-6 text-slate-700 leading-relaxed">
+                This section introduces the concept of distributed job scheduling, its importance in modern computing, and the primary objectives these systems aim to achieve. Distributed job schedulers are essential for managing complex computational tasks across multiple machines, enabling efficiency, scalability, and automation. They are crucial in environments dealing with big data, microservices, and cloud computing.
+            </p>
+            
+            <div class="grid md:grid-cols-2 gap-6 mb-6">
+                <div class="interactive-card" onclick="toggleDetails(this)">
+                    <h3>A. Defining Distributed Job Scheduling</h3>
+                    <div class="details">
+                        <p>It's the process of coordinating and executing tasks across multiple interconnected nodes. Key for workloads exceeding single-machine capacity, optimizing resource use, and handling complex tasks.</p>
+                        <p class="mt-2"><strong>Importance:</strong> Driven by big data, microservices, and cloud computing, requiring orchestration across many machines.</p>
+                    </div>
+                </div>
+                <div class="interactive-card" onclick="toggleDetails(this)">
+                    <h3>B. Core Goals</h3>
+                    <div class="details">
+                        <ul class="list-disc list-inside space-y-1">
+                            <li><strong>Workflow Orchestration:</strong> Design, automate, and monitor complex job sequences with dependencies, conditional logic, and loops.</li>
+                            <li><strong>Resource Management & Optimization:</strong> Aggregate and manage diverse computing resources (desktops, servers, cloud instances) to maximize utilization and reduce costs.</li>
+                            <li><strong>Automation & Efficiency:</strong> Reduce manual intervention, minimize job completion times through parallelism, and lower task latency.</li>
+                            <li><strong>Scalability & Reliability:</strong> Handle growing workloads by scaling horizontally, ensuring fault tolerance and high availability.</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <h3 class="text-xl font-semibold mb-3 text-teal-600">Common Use Cases</h3>
+             <p class="mb-4 text-slate-700 leading-relaxed">
+                Distributed schedulers are versatile, supporting a wide range of applications. The complexity of these use cases, such as managing Directed Acyclic Graphs (DAGs) for task dependencies or handling specialized hardware like GPUs, drives the need for sophisticated scheduler features.
+            </p>
+            <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h4 class="font-semibold text-teal-700">Batch Processing</h4>
+                    <p class="text-sm text-slate-600">Large-scale data analysis, periodic report generation. E.g., Argo Workflows for multi-step batch processes.</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h4 class="font-semibold text-teal-700">Periodic Maintenance</h4>
+                    <p class="text-sm text-slate-600">System backups, database maintenance (log rotation), cron-like scheduled tasks.</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h4 class="font-semibold text-teal-700">Workflow Management</h4>
+                    <p class="text-sm text-slate-600">Chaining jobs with complex dependencies. E.g., ETL pipelines, ML model training workflows.</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h4 class="font-semibold text-teal-700">Real-time & Event-Driven Tasks</h4>
+                    <p class="text-sm text-slate-600">Responding to system events, triggering follow-up actions or real-time data processing.</p>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h4 class="font-semibold text-teal-700">High-Performance Computing (HPC)</h4>
+                    <p class="text-sm text-slate-600">Managing intensive simulations and parallel jobs on clusters. E.g., Slurm.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="requirements" class="content-section">
+            <h2 class="text-2xl font-semibold mb-4 text-teal-700">II. Requirements for a Distributed Job Scheduler</h2>
+            <p class="mb-6 text-slate-700 leading-relaxed">
+                Clear requirements are crucial for designing a complex system like a distributed job scheduler. This section outlines the functional (what the system does) and non-functional (how well it does it) requirements, along with capacity estimations that guide the design to meet performance and scalability goals.
+            </p>
+
+            <div id="requirements-tabs" class="mb-6">
+                <button class="tab-button active" onclick="openTab(event, 'functional-req')">Functional</button>
+                <button class="tab-button" onclick="openTab(event, 'non-functional-req')">Non-Functional</button>
+                <button class="tab-button" onclick="openTab(event, 'capacity-req')">Capacity Estimations</button>
+            </div>
+
+            <div id="functional-req" class="tab-content active">
+                <h3 class="text-xl font-semibold mb-3 text-teal-600">A. Functional Requirements</h3>
+                <div class="space-y-4">
+                    <div class="interactive-card" onclick="toggleDetails(this)">
+                        <h4>Job Definition & Submission</h4>
+                        <div class="details">
+                            <ul class="list-disc list-inside space-y-1">
+                                <li>Executable specification (script, binary, container).</li>
+                                <li>Arguments and environment variables.</li>
+                                <li>Resource requirements (CPU, memory, GPU).</li>
+                                <li>Scheduling parameters (immediate, future, recurring).</li>
+                                <li>Job dependencies (DAGs).</li>
+                                <li>Retry policies and timeout settings.</li>
+                                <li>Output paths and logging configurations.</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="interactive-card" onclick="toggleDetails(this)">
+                        <h4>Job Scheduling & Execution</h4>
+                        <div class="details">
+                            <ul class="list-disc list-inside space-y-1">
+                                <li>Distributed execution across worker nodes.</li>
+                                <li>Manual control (trigger, pause, resume).</li>
+                                <li>Recurring job management (enable/disable).</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="interactive-card" onclick="toggleDetails(this)">
+                        <h4>Job Monitoring & Management</h4>
+                        <div class="details">
+                            <ul class="list-disc list-inside space-y-1">
+                                <li>Real-time status tracking (pending, running, completed, failed).</li>
+                                <li>Querying capabilities for current and historical job details.</li>
+                                <li>Job cancellation.</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="interactive-card" onclick="toggleDetails(this)">
+                        <h4>Security Controls</h4>
+                        <div class="details">
+                            <ul class="list-disc list-inside space-y-1">
+                                <li>Authentication (API keys, tokens).</li>
+                                <li>Authorization (RBAC to control actions).</li>
+                            </ul>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="non-functional-req" class="tab-content">
+                <h3 class="text-xl font-semibold mb-3 text-teal-600">B. Non-Functional Requirements</h3>
+                <div class="grid md:grid-cols-2 gap-4">
+                    <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Scalability:</strong> Handle 10 billion jobs/day, many tasks, numerous workers. Scale API, queue, scheduler, state store.</div>
+                    <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Reliability & Durability:</strong> Accurate, on-time execution. No loss of job definitions or critical state. At-least-once execution.</div>
+                    <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Availability (HA):</strong> System remains operational despite component failures. HA for master, queue, persistence.</div>
+                    <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Fault Tolerance:</strong> Detect and handle worker crashes, network partitions, job failures. Retry strategies, state recovery.</div>
+                    <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Performance (Low Latency):</strong> Efficient processing, minimal system-introduced latency. Critical jobs run close to scheduled time (e.g., 2-4s delay).</div>
+                    <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Consistency:</strong> Consistent view of job/task status, queue state, worker status. Balance strong vs. eventual consistency (CAP theorem).</div>
+                    <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Maintainability & Extensibility:</strong> Easy maintenance, updates, feature additions.</div>
+                    <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Security:</strong> Secure communication, vulnerability protection, data protection (transit/rest).</div>
+                    <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Monitoring & Observability:</strong> Comprehensive logging, metrics, alerting for health, status, resource use.</div>
+                </div>
+            </div>
+            
+            <div id="capacity-req" class="tab-content">
+                <h3 class="text-xl font-semibold mb-3 text-teal-600">C. Capacity Estimations</h3>
+                 <p class="mb-4 text-slate-700 leading-relaxed">
+                    Estimating capacity needs is vital for designing a system that meets its non-functional requirements, especially for scalability and performance. These estimates guide decisions on infrastructure, database choices, and network architecture.
+                </p>
+                <div class="space-y-3">
+                    <p><strong class="text-teal-700">Traffic Estimate:</strong> ~10 billion jobs/day (~$10^4$ jobs/sec). Consider API call rates for status queries, management ops, and internal communication volume.</p>
+                    <p><strong class="text-teal-700">Storage Estimate:</strong> Job metadata (parameters, scripts, schedule, dependencies), job logs (potentially largest consumer, e.g., 10TB/day mentioned for binaries/configs), state store for queues, worker status, cluster config.</p>
+                    <p><strong class="text-teal-700">Bandwidth Estimate:</strong> Client-API, scheduler-worker, component-state store communication. Consider message sizes for submissions, status updates, heartbeats.</p>
+                    <p><strong class="text-teal-700">Memory Estimate:</strong> Job queue entries (e.g., 100 bytes/entry -> 1MB for 10k concurrent jobs), scheduler data structures (active jobs, workers), worker agent memory.</p>
+                    <p class="mt-2 text-sm text-slate-600">Must account for peak loads, not just averages. Log rotation and tiered storage are important for managing log volume.</p>
+                </div>
+            </div>
+        </section>
+
+        <section id="architecture" class="content-section">
+            <h2 class="text-2xl font-semibold mb-4 text-teal-700">III. System Architecture and Design Principles</h2>
+            <p class="mb-6 text-slate-700 leading-relaxed">
+                The system architecture defines the core components and their interactions, forming the backbone of the scheduler. This section explores a high-level architectural overview, common architectural patterns with their trade-offs, and best practices for API design, all crucial for building a robust and scalable system.
+            </p>
+
+            <h3 class="text-xl font-semibold mb-3 text-teal-600">A. High-Level Architecture: Core Components</h3>
+            <p class="mb-4 text-slate-700 leading-relaxed">
+                A distributed job scheduler typically comprises several key components working in concert. Hover over or click a component to learn more.
+            </p>
+            <div class="bg-white p-6 rounded-lg shadow-lg mb-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-center">
+                    <div class="html-diagram-component" title="Users/Clients submit jobs and query status via this entry point. Handles auth, rate limiting.">API Gateway / Job Submission Interface</div>
+                    <div class="html-diagram-arrow md:col-span-3">⬇️ bilateral ⬆️</div>
+                    <div class="html-diagram-component md:col-start-2" title="Stores static job info: executable, params, schedule, resources, dependencies.">Job Definition Store</div>
+                </div>
+                <div class="html-diagram-arrow">⬇️</div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
+                    <div class="html-diagram-component" title="Buffers submitted jobs awaiting execution. Decouples submission from execution.">Job Queue</div>
+                    <div class="html-diagram-arrow hidden md:block">➡️</div>
+                     <div class="md:hidden html-diagram-arrow">⬇️</div>
+                    <div class="html-diagram-component" title="The 'brain'. Makes scheduling decisions based on policies, resource availability. Assigns tasks.">Scheduler Core (Master/Controller)</div>
+                    <div class="html-diagram-arrow hidden md:block">➡️</div>
+                    <div class="md:hidden html-diagram-arrow">⬇️</div>
+                    <div class="html-diagram-component" title="Tracks worker state, resource availability (CPU, memory, GPU). Monitors health via heartbeats.">Resource Manager</div>
+                </div>
+                 <div class="html-diagram-arrow">⬇️ (Scheduler to Workers)</div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div class="html-diagram-component md:col-span-3" title="Machines/containers that execute assigned jobs. Run an agent to communicate status, logs.">Worker Nodes (Executors/Agents)</div>
+                </div>
+                 <div class="html-diagram-arrow">⬆️ (Workers report to Scheduler/RM/State)</div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <div class="html-diagram-component" title="Durably stores critical runtime state: job/task status, queue state, worker info, cluster config. E.g., ZooKeeper, etcd.">State Persistence Layer</div>
+                    <div class="html-diagram-component" title="Aggregates logs, metrics, alerts from all components. Provides operational visibility.">Monitoring and Logging Service</div>
+                </div>
+            </div>
+            
+            <h3 class="text-xl font-semibold mb-3 text-teal-600">B. Architectural Patterns and Trade-offs</h3>
+            <p class="mb-4 text-slate-700 leading-relaxed">
+                Different architectural patterns can be employed, each with its own strengths and weaknesses. The table below summarizes key patterns. A chart visualizes some of these trade-offs.
+            </p>
+            <div class="overflow-x-auto bg-white p-4 rounded-lg shadow mb-6">
+                <table id="architecturePatternsTable">
+                    <thead>
+                        <tr>
+                            <th>Feature</th>
+                            <th>Centralized</th>
+                            <th>Decentralized</th>
+                            <th>Master-Worker</th>
+                            <th>Two-Level Scheduling</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr><td>Key Characteristics</td><td>Single control point</td><td>Distributed control logic</td><td>Central master assigns tasks</td><td>Global resource allocation, app-specific scheduling</td></tr>
+                        <tr><td>Pros</td><td>Simpler design, global view</td><td>High fault tolerance, better scalability</td><td>Clear separation of concerns</td><td>Scalable, flexible for diverse apps</td></tr>
+                        <tr><td>Cons</td><td>SPOF, scalability bottleneck</td><td>Complex coordination, suboptimal global decisions</td><td>Master can be SPOF/bottleneck</td><td>RM lacks full app insight, stale L2 info</td></tr>
+                        <tr><td>Scalability</td><td>Limited</td><td>Higher</td><td>Master-limited</td><td>High</td></tr>
+                        <tr><td>Fault Tolerance</td><td>Low (SPOF)</td><td>High (no SPOF)</td><td>Master SPOF</td><td>RM HA needed</td></tr>
+                        <tr><td>Complexity</td><td>Lower</td><td>Higher</td><td>Moderate</td><td>High</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="chart-container bg-white p-4 rounded-lg shadow">
+                <canvas id="architecturePatternsChart"></canvas>
+            </div>
+
+            <h3 class="text-xl font-semibold mt-8 mb-3 text-teal-600">C. API Design Best Practices</h3>
+            <div class="grid md:grid-cols-2 gap-4">
+                <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Idempotency:</strong> Operations (submit, update, cancel) produce same result if called multiple times. Vital for retries.</div>
+                <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Versioning:</strong> Manage API changes without breaking clients (e.g., /v1/, /v2/).</div>
+                <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Authentication & Authorization:</strong> Secure all endpoints (OAuth, API keys). Enforce permissions (RBAC).</div>
+                <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Pagination:</strong> Handle large lists of resources efficiently (e.g., jobs). Cursor-based preferred.</div>
+                <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Rate Limiting:</strong> Protect from overload, ensure fair usage.</div>
+                <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Clear Naming & HTTP Methods:</strong> Intuitive, consistent resource names. Standard HTTP verbs (GET, POST, PUT, DELETE).</div>
+                <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Comprehensive Error Handling:</strong> Standard HTTP status codes, informative error messages.</div>
+                 <div class="bg-white p-3 rounded-lg shadow-sm"><strong class="text-teal-700">Request/Response Validation:</strong> Validate inputs, ensure responses conform to schema.</div>
+            </div>
+        </section>
+
+        <section id="components" class="content-section">
+            <h2 class="text-2xl font-semibold mb-4 text-teal-700">IV. Deep Dive into Core Components</h2>
+            <p class="mb-6 text-slate-700 leading-relaxed">
+                This section delves into the specifics of each primary component of a distributed job scheduler. Understanding the design considerations, responsibilities, and technological options for each is key to building a comprehensive system. Use the tabs below to explore each component.
+            </p>
+
+            <div id="components-tabs" class="mb-6 flex flex-wrap">
+                <button class="tab-button active" onclick="openComponentTab(event, 'comp-job-definition')">Job Definition</button>
+                <button class="tab-button" onclick="openComponentTab(event, 'comp-job-queue')">Job Queue</button>
+                <button class="tab-button" onclick="openComponentTab(event, 'comp-scheduler-module')">Scheduler Module</button>
+                <button class="tab-button" onclick="openComponentTab(event, 'comp-resource-manager')">Resource Manager</button>
+                <button class="tab-button" onclick="openComponentTab(event, 'comp-worker-node')">Worker Node</button>
+                <button class="tab-button" onclick="openComponentTab(event, 'comp-state-management')">State Management</button>
+            </div>
+
+            <div id="comp-job-definition" class="tab-content active">
+                <h3 class="text-xl font-semibold mb-3 text-teal-600">A. Job Definition and Submission</h3>
+                <p class="mb-4 text-slate-700">Jobs are defined using structured formats (JSON, YAML) or SDKs. Key fields include identifiers, execution details (command, container image), resource needs, scheduling params, dependencies, retry policies, and logging configs. Submission occurs via REST or gRPC APIs, with client interfaces like Web UIs, CLIs, or SDKs.</p>
+            </div>
+            <div id="comp-job-queue" class="tab-content">
+                <h3 class="text-xl font-semibold mb-3 text-teal-600">B. Job Queue Design</h3>
+                <p class="mb-4 text-slate-700">Decouples submission from execution. Trade-offs: Persistent (durable, slower, e.g., Kafka, RabbitMQ, DB-backed) vs. In-Memory (fast, less durable, e.g., Redis). Ordering: FIFO (simple, convoy effect) vs. Priority (urgent jobs first, starvation risk). Technologies like Kafka, Redis, RabbitMQ, or databases are used.</p>
+                <div class="overflow-x-auto bg-white p-4 rounded-lg shadow mb-6">
+                    <table id="jobQueueTechTable">
+                        <thead><tr><th>Technology</th><th>Persistence</th><th>Ordering</th><th>Throughput</th><th>Latency</th><th>Key Pros</th><th>Key Cons</th></tr></thead>
+                        <tbody>
+                            <tr><td>Database (SQL)</td><td>Persistent (ACID)</td><td>FIFO (complex priority)</td><td>Moderate</td><td>Moderate-High</td><td>Transactional, familiar</td><td>Polling overhead, contention</td></tr>
+                            <tr><td>Apache Kafka</td><td>Persistent (Log)</td><td>FIFO (partition), Priority (topics)</td><td>Very High</td><td>Low-Moderate</td><td>Durable, scalable, stream</td><td>Complex setup</td></tr>
+                            <tr><td>Redis</td><td>In-memory (opt. persist)</td><td>FIFO (Lists), Priority (Sorted Sets)</td><td>Very High</td><td>Very Low</td><td>Fast, versatile</td><td>Limited durability/capacity</td></tr>
+                            <tr><td>RabbitMQ</td><td>Persistent & Transient</td><td>FIFO, Priority (native)</td><td>High</td><td>Low-Moderate</td><td>Flexible routing, reliable</td><td>Resource-intensive</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="chart-container bg-white p-4 rounded-lg shadow">
+                    <canvas id="jobQueueTechChart"></canvas>
+                </div>
+            </div>
+            <div id="comp-scheduler-module" class="tab-content">
+                <h3 class="text-xl font-semibold mb-3 text-teal-600">C. Scheduler Module</h3>
+                <p class="mb-4 text-slate-700">Core decision-maker. Responsibilities: task assignment, load balancing liaison, state tracking, dependency handling, retries, policy enforcement. Algorithms: FIFO, Round Robin, Priority, Fair Share, Deadline, Affinity/Anti-Affinity, Least Loaded, Backfill. Extensible policies via plugin architectures (e.g., Kubernetes Scheduler Framework) are common for flexibility.</p>
+                 <div class="overflow-x-auto bg-white p-4 rounded-lg shadow">
+                    <table id="schedulingAlgorithmsTable">
+                        <thead><tr><th>Algorithm</th><th>Type</th><th>Key Characteristics</th><th>Pros</th><th>Cons</th></tr></thead>
+                        <tbody>
+                            <tr><td>FIFO/FCFS</td><td>Non-preemptive</td><td>Order of arrival</td><td>Simple, fair by arrival</td><td>Convoy effect</td></tr>
+                            <tr><td>Round Robin</td><td>Preemptive</td><td>Fixed time slice</td><td>Prevents starvation</td><td>Context switch overhead</td></tr>
+                            <tr><td>Priority-Based</td><td>Pre/Non-preemptive</td><td>Higher priority first</td><td>Critical jobs precedence</td><td>Low-priority starvation</td></tr>
+                            <tr><td>Fair Share</td><td>Preemptive</td><td>Fair resource distribution</td><td>Prevents hogging</td><td>Complex "fairness" def.</td></tr>
+                            <tr><td>Deadline-Based (EDF)</td><td>Dynamic Prio.</td><td>Earlier deadline first</td><td>Optimal if not overloaded</td><td>Overload sensitivity</td></tr>
+                            <tr><td>Affinity</td><td>Constraint</td><td>Schedule on specific nodes</td><td>Optimizes performance/compliance</td><td>Underutilization risk</td></tr>
+                            <tr><td>Anti-Affinity</td><td>Constraint</td><td>Avoid scheduling on same node</td><td>Improves HA</td><td>Scheduling difficulty</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <div id="comp-resource-manager" class="tab-content">
+                <h3 class="text-xl font-semibold mb-3 text-teal-600">D. Resource Manager</h3>
+                <p class="mb-4 text-slate-700">Oversees and allocates cluster resources. Tracks worker status via heartbeating and failure detection. Manages heterogeneous resources (CPU, Memory, GPU, custom licenses). Allocation strategies: Optimistic (low conflict assumption), Pessimistic (lock upfront), Reservation-based (guaranteed future resources), Auction-based (market mechanism).</p>
+            </div>
+            <div id="comp-worker-node" class="tab-content">
+                <h3 class="text-xl font-semibold mb-3 text-teal-600">E. Worker Node (Agent) Design</h3>
+                <p class="mb-4 text-slate-700">Executes jobs. Environment: Containerization (Docker) for isolation/reproducibility, Sandboxing (Kata Containers) for higher security. Dependency Management: Baked into images, artifact fetching, shared storage. Communication: Heartbeats, polling for tasks, or push from scheduler. Status Reporting: Progress, resource use, logs.</p>
+            </div>
+            <div id="comp-state-management" class="tab-content">
+                <h3 class="text-xl font-semibold mb-3 text-teal-600">F. State Management and Persistence</h3>
+                <p class="mb-4 text-slate-700">Manages job/task status, queue state, worker state, cluster config, audit logs. Mechanisms: Distributed DBs (SQL/NoSQL), ZooKeeper, etcd. Consensus Protocols (Raft, Paxos) for reliable state changes (e.g., leader election). Consistency Models: CAP Theorem (Consistency, Availability, Partition Tolerance). Trade-off between Strong Consistency (accuracy, higher latency) and Eventual Consistency (availability, potential stale reads).</p>
+                <div class="overflow-x-auto bg-white p-4 rounded-lg shadow">
+                    <table id="consensusProtocolsTable">
+                        <thead><tr><th>Feature</th><th>Paxos</th><th>Raft</th></tr></thead>
+                        <tbody>
+                            <tr><td>Key Idea</td><td>Multi-phase agree on value</td><td>Leader-based log replication</td></tr>
+                            <tr><td>Complexity</td><td>Very complex</td><td>Designed for understandability</td></tr>
+                            <tr><td>Leader Election</td><td>No dedicated leader (classic)</td><td>Explicit, randomized timeouts</td></tr>
+                            <tr><td>Common Use</td><td>Chubby</td><td>etcd, Consul</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <section id="scalability" class="content-section">
+            <h2 class="text-2xl font-semibold mb-4 text-teal-700">V. Scalability and Performance</h2>
+            <p class="mb-6 text-slate-700 leading-relaxed">
+                A distributed job scheduler must scale to handle growing job volumes, worker counts, and throughput demands while maintaining low latency. This section discusses the challenges, bottleneck identification, and strategies for achieving these goals.
+            </p>
+            <div class="grid md:grid-cols-2 gap-6">
+                <div class="interactive-card" onclick="toggleDetails(this)">
+                    <h3>A. Challenges in Scaling</h3>
+                    <div class="details">
+                        <ul class="list-disc list-inside space-y-1">
+                            <li><strong>High Job Volume:</strong> Strain on ingestion, storage, queuing, scheduling, tracking (e.g., 10B jobs/day).</li>
+                            <li><strong>Large Worker Count:</strong> Complexity in managing status, distributing tasks, handling failures for thousands of workers.</li>
+                            <li><strong>High Throughput:</strong> Processing many job completions, state updates, and new submissions rapidly.</li>
+                            <li><strong>Low Latency:</strong> Prompt job scheduling and initiation.</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="interactive-card" onclick="toggleDetails(this)">
+                    <h3>B. Identifying and Mitigating Bottlenecks</h3>
+                    <div class="details">
+                        <ul class="list-disc list-inside space-y-1">
+                            <li><strong>API Gateway:</strong> Scale horizontally, cache, rate limit.</li>
+                            <li><strong>Job Queue:</strong> Partition/shard, use high-performance brokers (Kafka, Redis).</li>
+                            <li><strong>Scheduler Logic:</strong> Decentralize, parallelize, optimize algorithms, in-memory state.</li>
+                            <li><strong>Resource Manager:</strong> Hierarchical structures, aggregate updates.</li>
+                            <li><strong>State Store:</strong> Shard/partition DBs, cache, appropriate consistency models.</li>
+                        </ul>
+                        <p class="mt-2 text-sm">Bottlenecks can shift. Continuous monitoring and profiling are essential.</p>
+                    </div>
+                </div>
+            </div>
+             <h3 class="text-xl font-semibold mt-6 mb-3 text-teal-600">C. Strategies for High Throughput and Low Latency</h3>
+             <div class="grid md:grid-cols-2 gap-6">
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h4 class="font-semibold text-teal-700">For High Throughput:</h4>
+                    <ul class="list-disc list-inside text-sm text-slate-600 space-y-1 mt-2">
+                        <li>Parallel processing across workers.</li>
+                        <li>Batching operations (submissions, status updates).</li>
+                        <li>Asynchronous processing with message queues.</li>
+                        <li>Efficient resource allocation (minimize idle time).</li>
+                        <li>Horizontal scaling of all components.</li>
+                        <li>Optimized state management.</li>
+                    </ul>
+                </div>
+                <div class="bg-white p-4 rounded-lg shadow">
+                    <h4 class="font-semibold text-teal-700">For Low Latency:</h4>
+                    <ul class="list-disc list-inside text-sm text-slate-600 space-y-1 mt-2">
+                        <li>In-memory data structures (queues, metadata).</li>
+                        <li>Fast scheduling algorithms, preemption.</li>
+                        <li>Proactive resource reservations.</li>
+                        <li>Minimized communication overhead (efficient protocols).</li>
+                        <li>Data locality aware scheduling.</li>
+                        <li>Anticipatory scheduling/caching.</li>
+                        <li>Decentralized scheduling elements.</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+
+        <section id="fault-tolerance" class="content-section">
+            <h2 class="text-2xl font-semibold mb-4 text-teal-700">VI. Fault Tolerance and Reliability</h2>
+            <p class="mb-6 text-slate-700 leading-relaxed">
+                Resilience to failures is critical for a distributed job scheduler. This involves designing for common failure scenarios and implementing high availability strategies for key components to ensure reliable job execution and data integrity.
+            </p>
+            <h3 class="text-xl font-semibold mb-3 text-teal-600">A. Common Failure Scenarios & Mitigations</h3>
+            <div class="space-y-4">
+                <div class="interactive-card" onclick="toggleDetails(this)">
+                    <h4>Scheduler Component Failure (Master/Controller)</h4>
+                    <div class="details"><p><strong>Mitigation:</strong> HA setups (leader election via Raft/Paxos with ZooKeeper/etcd), active/passive or active/active configurations, state replication to standby instances or shared durable store.</p></div>
+                </div>
+                <div class="interactive-card" onclick="toggleDetails(this)">
+                    <h4>Worker Node Failure</h4>
+                    <div class="details"><p><strong>Mitigation:</strong> Prompt failure detection (missed heartbeats), task rescheduling/retry on healthy workers based on job's retry policy, state recovery for stateful jobs, idempotency for retried jobs.</p></div>
+                </div>
+                <div class="interactive-card" onclick="toggleDetails(this)">
+                    <h4>Job Queue / Message Broker Failure</h4>
+                    <div class="details"><p><strong>Mitigation:</strong> Clustered, fault-tolerant broker deployment with data replication (e.g., Kafka replicated topics). Persistent queues to prevent message loss.</p></div>
+                </div>
+                <div class="interactive-card" onclick="toggleDetails(this)">
+                    <h4>State Persistence Layer Failure</h4>
+                    <div class="details"><p><strong>Mitigation:</strong> Distributed databases with replication/failover. ZooKeeper/etcd ensembles. Regular backups.</p></div>
+                </div>
+                <div class="interactive-card" onclick="toggleDetails(this)">
+                    <h4>Network Partitions</h4>
+                    <div class="details"><p><strong>Mitigation:</strong> Detection via timeouts/quorum loss. CAP theorem trade-offs (consistency vs. availability). Conflict resolution mechanisms post-healing.</p></div>
+                </div>
+                 <div class="interactive-card" onclick="toggleDetails(this)">
+                    <h4>Individual Job Failures</h4>
+                    <div class="details"><p><strong>Mitigation:</strong> Robust error handling in job code, clear logging, system-level retries, Dead-Letter Queues (DLQs) for persistently failing jobs.</p></div>
+                </div>
+            </div>
+             <h3 class="text-xl font-semibold mt-6 mb-3 text-teal-600">B. High Availability Strategies for Scheduler Components</h3>
+             <p class="text-slate-700 leading-relaxed">
+                Ensuring the scheduler components, especially the master/controller, remain available involves redundancy and automated failover. Key strategies include:
+                <ul class="list-disc list-inside space-y-1 mt-2">
+                    <li><strong>Leader Election:</strong> Using services like ZooKeeper or etcd, multiple scheduler instances can participate in an election, where one is chosen as the active leader. If the leader fails, a new one is elected automatically.</li>
+                    <li><strong>State Replication:</strong> The critical state managed by the leader (e.g., current job assignments, queue pointers) must be replicated to followers or a shared persistent store. This allows a newly elected leader to resume operations from a consistent state.</li>
+                    <li><strong>Redundant Instances:</strong> Running multiple instances (active/passive or potentially active/active for some parts) of scheduler components, job queues, and state stores across different failure domains (e.g., servers, racks, availability zones).</li>
+                    <li><strong>Health Checks and Failover Mechanisms:</strong> Continuous monitoring of component health and automated mechanisms to switch traffic or responsibility to a healthy standby instance upon failure detection.</li>
+                </ul>
+             </p>
+        </section>
+    </main>
+
+    <footer class="mt-12 py-8 bg-slate-200 text-center">
+        <p class="text-sm text-slate-600">Interactive Distributed Job Scheduler Design | Based on Expert Analysis Report</p>
+    </footer>
+
+    <script>
+        const navItems = document.querySelectorAll('.nav-item');
+        const contentSections = document.querySelectorAll('.content-section');
+        const componentTabs = document.querySelectorAll('#components-tabs .tab-button');
+        const componentTabContents = document.querySelectorAll('#components .tab-content');
+        const requirementsTabs = document.querySelectorAll('#requirements-tabs .tab-button');
+        const requirementsTabContents = document.querySelectorAll('#requirements .tab-content');
+
+        function navigateToSection(targetId) {
+            navItems.forEach(item => {
+                item.classList.toggle('active', item.dataset.target === targetId);
+            });
+            contentSections.forEach(section => {
+                section.classList.toggle('active', section.id === targetId);
+            });
+            window.scrollTo(0, 0);
+        }
+        
+        navItems.forEach(item => {
+            item.addEventListener('click', () => {
+                navigateToSection(item.dataset.target);
+            });
+        });
+
+        function toggleDetails(card) {
+            const details = card.querySelector('.details');
+            if (details) {
+                details.style.display = details.style.display === 'none' || details.style.display === '' ? 'block' : 'none';
+            }
+        }
+        
+        function openTab(event, tabName) {
+            requirementsTabContents.forEach(content => content.classList.remove('active'));
+            requirementsTabs.forEach(tab => tab.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+            event.currentTarget.classList.add('active');
+        }
+
+        function openComponentTab(event, tabName) {
+            componentTabContents.forEach(content => content.classList.remove('active'));
+            componentTabs.forEach(tab => tab.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+            event.currentTarget.classList.add('active');
+        }
+        
+        // Initial active tab for requirements
+        if (document.querySelector('#requirements-tabs .tab-button.active')) {
+            document.querySelector('#requirements-tabs .tab-button.active').click();
+        }
+         // Initial active tab for components
+        if (document.querySelector('#components-tabs .tab-button.active')) {
+            document.querySelector('#components-tabs .tab-button.active').click();
+        }
+
+
+        // Chart Data and Initialization
+        const architecturePatternsData = {
+            labels: ['Centralized', 'Decentralized', 'Master-Worker', 'Two-Level Scheduling'],
+            datasets: [
+                {
+                    label: 'Scalability (Higher is better)',
+                    data: [2, 4, 3, 5], // Subjective scores 1-5
+                    backgroundColor: 'rgba(54, 162, 235, 0.6)', // Blue
+                    borderColor: 'rgba(54, 162, 235, 1)',
+                    borderWidth: 1
+                },
+                {
+                    label: 'Fault Tolerance (Higher is better)',
+                    data: [1, 5, 2, 4], // Subjective scores 1-5
+                    backgroundColor: 'rgba(75, 192, 192, 0.6)', // Green
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                },
+                {
+                    label: 'Complexity (Lower is better, inverted for chart)',
+                    data: [4, 2, 3, 1], // Inverted: 1=High, 5=Low. Original: Low(1) High(5) Mod(3) High(5)
+                    backgroundColor: 'rgba(255, 99, 132, 0.6)', // Red
+                    borderColor: 'rgba(255, 99, 132, 1)',
+                    borderWidth: 1
+                }
+            ]
+        };
+
+        const jobQueueTechData = {
+            labels: ['Database (SQL)', 'Apache Kafka', 'Redis', 'RabbitMQ'],
+            datasets: [
+                {
+                    label: 'Typical Throughput (Higher is better)',
+                    data: [2, 5, 5, 4], // Subjective scores 1-5
+                    backgroundColor: 'rgba(255, 159, 64, 0.6)', // Orange
+                    borderColor: 'rgba(255, 159, 64, 1)',
+                    borderWidth: 1
+                },
+                {
+                    label: 'Typical Latency (Lower is better, inverted for chart)',
+                    data: [2, 3, 5, 3], // Inverted: 1=High, 5=Very Low. Original: Mod-High, Low-Mod, Very Low, Low-Mod
+                    backgroundColor: 'rgba(153, 102, 255, 0.6)', // Purple
+                    borderColor: 'rgba(153, 102, 255, 1)',
+                    borderWidth: 1
+                },
+                 {
+                    label: 'Durability (Higher is better)',
+                    data: [5, 5, 2, 4], // SQL (ACID), Kafka (Log), Redis (In-mem opt.), RabbitMQ (Persist/Trans)
+                    backgroundColor: 'rgba(75, 192, 192, 0.6)', // Green
+                    borderColor: 'rgba(75, 192, 192, 1)',
+                    borderWidth: 1
+                }
+            ]
+        };
+        
+        function createBarChart(canvasId, chartData, chartTitle) {
+            const ctx = document.getElementById(canvasId).getContext('2d');
+            new Chart(ctx, {
+                type: 'bar',
+                data: chartData,
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { 
+                                color: '#4B5563' // text-slate-600
+                            },
+                            grid: { color: '#E5E7EB' } // border-slate-300
+                        },
+                        x: {
+                           ticks: { 
+                                color: '#4B5563',
+                                callback: function(value, index, values) {
+                                    const label = this.getLabelForValue(value);
+                                    if (label.length > 16) { // Wrap if longer than 16 chars
+                                        return label.match(/.{1,16}/g); // Split into lines of 16 chars
+                                    }
+                                    return label;
+                                }
+                           },
+                           grid: { display: false }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: { color: '#374151' } // text-slate-700
+                        },
+                        title: {
+                            display: true,
+                            text: chartTitle,
+                            color: '#1F2937', // text-slate-800
+                            font: { size: 16, weight: 'bold'}
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.7)',
+                            titleColor: '#FFFFFF',
+                            bodyColor: '#FFFFFF',
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.dataset.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed.y !== null) {
+                                        label += context.parsed.y;
+                                    }
+                                    // Add qualitative meaning for inverted scores
+                                    if (context.dataset.label.includes('Complexity') && context.parsed.y === 4) label += ' (Low)';
+                                    if (context.dataset.label.includes('Complexity') && context.parsed.y === 1) label += ' (High)';
+                                    if (context.dataset.label.includes('Latency') && context.parsed.y === 5) label += ' (Very Low)';
+                                    if (context.dataset.label.includes('Latency') && context.parsed.y === 2) label += ' (High)';
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Create charts when their respective sections become visible
+        // Using IntersectionObserver to delay chart creation until visible
+        const chartObserver = new IntersectionObserver((entries, observer) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    if (entry.target.id === 'architecturePatternsChart' && !entry.target.chart) {
+                        createBarChart('architecturePatternsChart', architecturePatternsData, 'Architectural Patterns Comparison');
+                        entry.target.chart = true; // Mark as initialized
+                    } else if (entry.target.id === 'jobQueueTechChart' && !entry.target.chart) {
+                        createBarChart('jobQueueTechChart', jobQueueTechData, 'Job Queue Technologies Comparison');
+                        entry.target.chart = true; // Mark as initialized
+                    }
+                   // observer.unobserve(entry.target); // Optional: unobserve after creation if only needed once
+                }
+            });
+        }, { threshold: 0.1 });
+
+        const archChartCanvas = document.getElementById('architecturePatternsChart');
+        const queueChartCanvas = document.getElementById('jobQueueTechChart');
+        if (archChartCanvas) chartObserver.observe(archChartCanvas);
+        if (queueChartCanvas) chartObserver.observe(queueChartCanvas);
+
+        // Ensure the first section is shown on load
+        navigateToSection('introduction');
+
+    </script>
+</body>
+</html>
